@@ -22,18 +22,17 @@ TaskQueue::~TaskQueue()
 
 void TaskQueue::addTask(Task& task)
 {
-    // pthread_mutex_lock(&m_mutex);
     QMutexLocker locker(&m_mutex);   // 自动加锁
     m_queue.enqueue(task);
-    // pthread_mutex_unlock(&m_mutex);
 
     emit taskAdded();   // 发送信号,方便UI联动
 }
 
-void TaskQueue::addTask(callback func, void* arg)
+
+void TaskQueue::addTask(int id, callback func, void* arg)
 {
     QMutexLocker locker(&m_mutex);
-    Task task(func, arg);
+    Task task(id, func, arg);
     m_queue.enqueue(task);
 
     emit taskAdded();
@@ -51,3 +50,9 @@ Task TaskQueue::takeTask()
     return t;
 }
 
+void TaskQueue::clearQueue()
+{
+    QMutexLocker locker(&m_mutex);
+    m_queue.clear();
+    emit queueCleared();
+}

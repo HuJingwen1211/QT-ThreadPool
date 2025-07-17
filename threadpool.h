@@ -24,27 +24,29 @@ public:
 
     // 添加任务
     void addTask(Task task);
+    
+    void addTask(int id, callback func, void* arg);
     // 获取忙线程的个数
     int getBusyNumber();
     // 获取活着的线程个数
     int getAliveNumber();
-
+    // 清空任务队列
+    void clearTaskQueue();
+    // // 广播线程状态变化
+    // void broadcastThreadStateChanged();
 signals:
     // 线程状态变化、任务完成、日志输出（方便UI联动）
-    void threadStateChanged(int threadId, bool isBusy);
-    void taskCompleted();
+    // void threadStateChanged(int threadId, bool isBusy);
+    void threadStateChanged(int threadId, int state);   // 0:空闲 1:忙碌 -1:退出
+    void taskCompleted(int taskId);
+    void taskRemoved();
     void logMessage(const QString& message);
 
 private slots:
     void onTaskAdded();
-    void onTaskRemoved();
+    // void onTaskRemoved();
 
 private:
-    // // 工作的线程的任务函数
-    // static void* worker(void* arg);
-    // // 管理者线程的任务函数
-    // static void* manager(void* arg);
-    // void threadExit();
 
     // 工作线程类，继承QThread，重写run方法
     class WorkerThread : public QThread
@@ -52,6 +54,7 @@ private:
     public:
         WorkerThread(ThreadPool* pool, int id);
         void run() override;
+        int id() const { return m_id; }
     private:
         ThreadPool* m_pool;
         int m_id;
@@ -68,6 +71,7 @@ private:
     };
 
     void threadExit(int threadId);
+    void emitDelayedSignal(const QString& logMsg = "", int threadId = -1, int state = 0);
 
 private:
 

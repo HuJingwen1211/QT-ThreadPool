@@ -1,6 +1,7 @@
 #include "threadpool.h"
 #include <QDebug>
 #include <QTime>
+#include <QTimer>
 
 /*
  * 说明：
@@ -38,6 +39,7 @@ void ThreadPool::WorkerThread::run()
                 if (m_pool->m_aliveNum > m_pool->m_minNum)
                 {
                     m_pool->m_aliveNum--;
+                    emit m_pool->threadStateChanged(m_id, -1);  // 先发射状态变化信号
                     m_pool->m_lock.unlock();
                     m_pool->threadExit(m_id);
                     return;
@@ -48,6 +50,7 @@ void ThreadPool::WorkerThread::run()
         // 检查线程池是否关闭
         if (m_pool->m_shutdown) // 若关闭
         {
+            emit m_pool->threadStateChanged(m_id, -1);
             m_pool->m_lock.unlock();
             m_pool->threadExit(m_id);
             return;
@@ -57,7 +60,7 @@ void ThreadPool::WorkerThread::run()
         // 从任务队列取出任务
         Task task = m_pool->m_taskQ->takeTask();
         m_pool->m_busyNum++;
-        emit m_pool->threadStateChanged(m_id, true);    // 发送信号
+        emit m_pool->threadStateChanged(m_id, 1);    // 发送信号
         m_pool->m_lock.unlock();
 
         // 执行任务
@@ -73,8 +76,9 @@ void ThreadPool::WorkerThread::run()
         qDebug() << "任务处理结束，thread" << m_id << "end working...";
         m_pool->m_lock.lock();
         m_pool->m_busyNum--;
-        emit m_pool->threadStateChanged(m_id, false);
-        emit m_pool->taskCompleted();
+        emit m_pool->threadStateChanged(m_id, 0);
+        emit m_pool->taskCompleted(task.id);
+        emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
         m_pool->m_lock.unlock();
     }
 }
@@ -112,7 +116,8 @@ void ThreadPool::ManagerThread::run()
                 m_pool->m_threads.append(thread);
                 thread->start();
                 m_pool->m_aliveNum++;
-                emit m_pool->logMessage(QString("管理者线程创建新工作线程, ID: %1").arg(m_pool->m_aliveNum));
+                emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(m_pool->m_aliveNum));
+                emit m_pool->threadStateChanged(m_pool->m_aliveNum, false);
             }
             m_pool->m_lock.unlock();
         }
@@ -129,10 +134,10 @@ void ThreadPool::ManagerThread::run()
             {
                 m_pool->m_notEmpty.wakeOne();
             }
-            emit m_pool->logMessage("管理者线程销毁多余的线程");
+            emit m_pool->logMessage(QString("[管理者线程]销毁%1个线程").arg(NUMBER));
         }
     }
-    emit m_pool->logMessage("管理者线程退出");
+    emit m_pool->logMessage("[管理者线程]退出");
 }
 
 
@@ -150,22 +155,31 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
         m_threads.append(thread);
         thread->start();
         m_aliveNum++;
-        emit logMessage(QString("创建子线程, ID: %1").arg(i + 1));
+        // emit logMessage(QString("[线程池]创建子线程, ID: %1").arg(i + 1));
+        // emit threadStateChanged(i + 1, false);
+        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1, 0);
     }
     // 创建管理者线程
     m_managerThread = new ManagerThread(this);
     m_managerThread->start();
-    emit logMessage("创建管理者线程");
+    // emit logMessage("[线程池]创建管理者线程");
+    emitDelayedSignal(QString("[线程池]创建管理者线程"));
 
     connect(m_taskQ, &TaskQueue::taskAdded, this, &ThreadPool::onTaskAdded);
-    connect(m_taskQ, &TaskQueue::taskRemoved, this, &ThreadPool::onTaskRemoved);
+    connect(m_taskQ, &TaskQueue::taskRemoved, this, &ThreadPool::taskRemoved);
 
-    emit logMessage(QString("线程池创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
+    // emit logMessage(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
+    emitDelayedSignal(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
+
+    // 延迟广播线程状态，确保信号已连接
+    // QTimer::singleShot(0, this, [this]() {
+    //     broadcastThreadStateChanged();
+    // });
 }
 
 ThreadPool::~ThreadPool()
 {
-    emit logMessage("线程池开始析构，准备关闭...");
+    emit logMessage("[线程池]开始析构，准备关闭...");
 
     m_shutdown = true;
 
@@ -177,7 +191,7 @@ ThreadPool::~ThreadPool()
         m_managerThread->wait();
         delete m_managerThread;
         m_managerThread = nullptr;
-        emit logMessage("管理者线程已安全退出");
+        emit logMessage("[线程池]管理者线程已安全退出");
     }
     // 等待所有线程结束
     for (WorkerThread* thread : m_threads)
@@ -194,7 +208,7 @@ ThreadPool::~ThreadPool()
         m_taskQ = nullptr;
     }
 
-    emit logMessage("线程池已正常关闭。");
+    emit logMessage("[线程池]已正常关闭。");
 }
 
 void ThreadPool::addTask(Task task)
@@ -205,10 +219,14 @@ void ThreadPool::addTask(Task task)
     }
     // 添加任务，不需要加锁，任务队列中有锁
     m_taskQ->addTask(task);
-    emit logMessage("添加任务到队列");
+    emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(task.id));
+}
 
-    // 唤醒工作的线程
-    // pthread_cond_signal(&m_notEmpty);
+void ThreadPool::addTask(int id, callback func, void* arg)
+{
+    if (m_shutdown) return;
+    m_taskQ->addTask(id, func, arg);
+    emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
 }
 
 int ThreadPool::getAliveNumber()
@@ -228,15 +246,54 @@ void ThreadPool::onTaskAdded()
 {
     // 唤醒一个等待的线程
     m_notEmpty.wakeOne();
-    emit logMessage("任务已添加到队列");
+    // emit logMessage("[线程池]任务已添加到队列");
 }
 
-void ThreadPool::onTaskRemoved()
-{
-    emit logMessage("任务已从队列取出");
-}
+// void ThreadPool::onTaskRemoved()
+// {
+//     emit logMessage("任务已从队列取出");
+// }
 
 void ThreadPool::threadExit(int threadId)
 {
-    emit logMessage(QString("线程 %1 退出").arg(threadId));
+    emit logMessage(QString("[线程池]线程 %1 退出").arg(threadId));
+}
+
+void ThreadPool::clearTaskQueue()
+{
+    if (m_shutdown) {
+        emit logMessage("[线程池]已关闭，无法清空任务队列");
+        return;
+    }
+    
+    if (!m_taskQ) {
+        emit logMessage("[线程池]任务队列不存在，无法清空");
+        return;
+    }
+    
+    m_taskQ->clearQueue();
+    emit logMessage("[线程池]任务队列已清空");
+}
+
+// // 广播线程状态变化
+// void ThreadPool::broadcastThreadStateChanged()
+// {
+//     QMutexLocker locker(&m_lock);
+//     for (WorkerThread* thread : m_threads)
+//     {
+//         emit threadStateChanged(thread->id(), false);
+//     }
+// }
+
+// 构造函数中，延迟广播线程状态变化
+void ThreadPool::emitDelayedSignal(const QString& logMsg, int threadId, int state)
+{
+    QTimer::singleShot(0, this, [this, logMsg, threadId, state]() {
+        if (threadId != -1) {
+            emit threadStateChanged(threadId, state);
+        }
+        if (!logMsg.isEmpty()) {
+            emit logMessage(logMsg);
+        }
+    });
 }

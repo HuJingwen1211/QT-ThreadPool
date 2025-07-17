@@ -16,8 +16,9 @@ using callback = void(*)(void*);
 
 struct Task
 {
-    Task() : function(nullptr), arg(nullptr) {}
-    Task(callback f, void* a) : function(f), arg(a) {}
+    Task() : id(0), function(nullptr), arg(nullptr) {}
+    Task(int tid, callback f, void* a) : id(tid), function(f), arg(a) {}
+    int id;
     callback function;
     void* arg;
 };
@@ -32,7 +33,7 @@ public:
 
     // 添加任务
     void addTask(Task& task);
-    void addTask(callback func, void* arg);
+    void addTask(int id, callback func, void* arg);
 
     // 取出一个任务
     Task takeTask();
@@ -45,11 +46,15 @@ public:
         return m_queue.size();
     }
 
+    // 清空队列
+    void clearQueue();
 
 signals:
     // Qt信号槽机制，方便和UI联动
     void taskAdded();
     void taskRemoved();
+    void queueCleared();
+
 
 private:
     QMutex m_mutex;        // Qt互斥锁，替代pthread_mutex_t
