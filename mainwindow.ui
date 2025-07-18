@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>489</width>
-    <height>565</height>
+    <height>579</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -204,6 +204,24 @@
           </item>
           <item>
            <widget class="QListWidget" name="idleThreadList"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBox_6">
+         <property name="minimumSize">
+          <size>
+           <width>300</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="title">
+          <string>线程池可视化</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_5">
+          <item>
+           <widget class="QGraphicsView" name="graphicsView"/>
           </item>
          </layout>
         </widget>

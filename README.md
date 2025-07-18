@@ -1,162 +1,306 @@
+好的，下面是根据你的项目现状、代码结构和我的分析，重新整理并补充了**类图、数据流图、序列图、状态图、组件图**的README文档（已用Mermaid语法，适合直接在GitHub等平台渲染）。
+
+---
+
 # Qt线程池项目文档
 
 ## 项目概述
 
-这是一个基于Qt框架实现的线程池系统，具有可视化界面，支持动态线程管理、任务调度和实时状态监控。项目采用Qt的信号槽机制实现线程池与UI的完美联动。
+本项目是一个基于Qt框架实现的线程池系统，支持动态线程管理、任务调度、线程安全和可视化界面。采用Qt信号槽机制实现线程池与UI的实时联动，适合多线程任务并发处理和教学演示。
+
+---
 
 ## 功能特性
 
-### 核心功能
 - **动态线程管理**：支持最小/最大线程数配置，自动扩容和缩容
 - **任务队列管理**：支持任务添加、执行、清空等操作
 - **实时状态监控**：可视化显示线程状态、任务队列、运行日志
 - **线程安全**：使用Qt的互斥锁和条件变量保证线程安全
+- **信号槽机制**：线程池与UI解耦，支持跨线程通信
 
-### 可视化界面
-- **线程状态区**：实时显示工作线程和空闲线程
-- **任务队列区**：显示等待执行、正在执行、已完成的任务
-- **统计信息区**：显示线程和任务的实时统计
-- **运行日志区**：显示详细的运行日志
+---
 
 ## 项目结构
 
 ```
 ThreadPool/
 ├── main.cpp                 # 程序入口
-├── mainwindow.cpp          # 主窗口实现
-├── mainwindow.h            # 主窗口头文件
-├── mainwindow.ui           # 主窗口UI设计文件
-├── threadpool.cpp          # 线程池核心实现
-├── threadpool.h            # 线程池头文件
-├── taskqueue.cpp           # 任务队列实现
-├── taskqueue.h             # 任务队列头文件
-└── ThreadPool.pro          # Qt项目文件
+├── mainwindow.cpp           # 主窗口实现
+├── mainwindow.h             # 主窗口头文件
+├── mainwindow.ui            # 主窗口UI设计文件
+├── threadpool.cpp           # 线程池核心实现
+├── threadpool.h             # 线程池头文件
+├── taskqueue.cpp            # 任务队列实现
+├── taskqueue.h              # 任务队列头文件
+└── ThreadPool.pro           # Qt项目文件
 ```
 
-## 核心类设计
+---
 
-### ThreadPool（线程池）
-- **功能**：管理线程池的生命周期和任务调度
-- **核心组件**：
-  - `WorkerThread`：工作线程类，执行具体任务
-  - `ManagerThread`：管理者线程，负责动态调整线程数量
-- **信号**：
-  - `threadStateChanged(int threadId, int state)`：线程状态变化
-  - `taskCompleted(int taskId)`：任务完成
-  - `logMessage(const QString& message)`：日志输出
+## 软件设计图
 
-### TaskQueue（任务队列）
-- **功能**：管理任务的存储和调度
-- **特性**：线程安全，支持信号槽机制
-- **信号**：
-  - `taskAdded()`：任务添加
-  - `taskRemoved()`：任务移除
-  - `queueCleared()`：队列清空
+### 1. 类图
 
-### MainWindow（主窗口）
-- **功能**：提供用户界面和交互逻辑
-- **特性**：实时更新线程状态、任务队列、统计信息
+```mermaid
+classDiagram
+    class MainWindow {
+        -Ui::MainWindow* ui
+        -ThreadPool* m_pool
+        -int m_totalTasks
+        +on_startButton_clicked()
+        +on_stopButton_clicked()
+        +on_addTaskButton_clicked()
+        +on_clearQueueButton_clicked()
+        +onTaskCompleted()
+        +onTaskRemoved()
+        +onThreadStateChanged(int)
+        +onLogMessage(QString)
+        +updateStatistics()
+    }
+
+    class ThreadPool {
+        -QMutex m_lock
+        -QWaitCondition m_notEmpty
+        -QList~WorkerThread*~ m_threads
+        -TaskQueue* m_taskQ
+        -ManagerThread* m_managerThread
+        -int m_minNum, m_maxNum
+        -int m_busyNum, m_aliveNum, m_exitNum
+        -int m_finishedTasks
+        -bool m_shutdown
+        +addTask(Task)
+        +addTask(int, callback, void*)
+        +getWaitingTaskNumber() int
+        +getRunningTaskNumber() int
+        +getFinishedTaskNumber() int
+        +getBusyNumber() int
+        +getAliveNumber() int
+        +getThreadState(int) int
+        +clearTaskQueue()
+        +threadStateChanged(int)
+        +taskCompleted(int)
+        +taskRemoved()
+        +logMessage(QString)
+    }
+
+    class TaskQueue {
+        -QMutex m_mutex
+        -QQueue~Task~ m_queue
+        +addTask(Task)
+        +addTask(int, callback, void*)
+        +takeTask() Task
+        +taskNumber() int
+        +clearQueue()
+        +taskAdded()
+        +taskRemoved()
+        +queueCleared()
+    }
+
+    class WorkerThread {
+        -ThreadPool* m_pool
+        -int m_id
+        -int m_state
+        +run()
+        +id() int
+        +state() int
+        +setState(int)
+    }
+
+    class ManagerThread {
+        -ThreadPool* m_pool
+        +run()
+    }
+
+    class Task {
+        +int id
+        +callback function
+        +void* arg
+        +Task()
+        +Task(int, callback, void*)
+    }
+
+    MainWindow --> ThreadPool : uses
+    ThreadPool --> TaskQueue : contains
+    ThreadPool --> WorkerThread : manages
+    ThreadPool --> ManagerThread : manages
+    TaskQueue --> Task : contains
+    WorkerThread --> ThreadPool : belongs to
+    ManagerThread --> ThreadPool : belongs to
+```
+
+---
+
+### 2. 数据流图
+
+```mermaid
+graph TD
+    A[用户界面] --> B[MainWindow]
+    B --> C[ThreadPool]
+    C --> D[TaskQueue]
+    C --> E[WorkerThread]
+    C --> F[ManagerThread]
+    
+    G[任务参数] --> H[Task对象]
+    H --> D
+    D --> E
+    E --> I[任务执行]
+    I --> J[任务完成]
+    J --> K[内存释放]
+    
+    L[线程状态变化] --> M[信号发射]
+    M --> N[UI更新]
+    
+    O[任务统计] --> P[统计信息]
+    P --> Q[UI显示]
+    
+    R[线程管理] --> S[线程创建/销毁]
+    S --> T[负载均衡]
+```
+
+---
+
+### 3. 序列图（任务执行流程）
+
+```mermaid
+sequenceDiagram
+    participant UI as MainWindow
+    participant TP as ThreadPool
+    participant TQ as TaskQueue
+    participant WT as WorkerThread
+    participant MT as ManagerThread
+
+    UI->>TP: addTask(taskId, func, arg)
+    TP->>TQ: addTask(task)
+    TQ->>TQ: 加锁保护
+    TQ->>TP: taskAdded信号
+    TP->>WT: wakeOne()唤醒线程
+    
+    loop 工作线程循环
+        WT->>TQ: takeTask()
+        TQ->>WT: 返回任务
+        WT->>WT: 设置忙碌状态
+        WT->>TP: threadStateChanged信号
+        WT->>WT: 执行任务函数
+        WT->>WT: 释放任务参数内存
+        WT->>TP: taskCompleted信号
+        WT->>TP: threadStateChanged信号
+    end
+    
+    loop 管理者线程循环
+        MT->>TP: 检查负载
+        alt 需要扩容
+            MT->>TP: 创建新线程
+        else 需要缩容
+            MT->>TP: 销毁多余线程
+        end
+    end
+```
+
+---
+
+### 4. 状态图（线程状态转换）
+
+```mermaid
+stateDiagram-v2
+    [*] --> 空闲: 线程创建完成
+    空闲 --> 忙碌: 获取到任务
+    忙碌 --> 空闲: 任务执行完成
+    空闲 --> 退出: 收到退出信号
+    忙碌 --> 退出: 收到退出信号
+    退出 --> [*]: 线程销毁
+```
+
+---
+
+### 5. 组件图
+
+```mermaid
+graph TB
+    subgraph "GUI层"
+        A[MainWindow]
+        B[UI界面]
+    end
+    
+    subgraph "业务逻辑层"
+        C[ThreadPool]
+        D[TaskQueue]
+    end
+    
+    subgraph "线程层"
+        E[WorkerThread]
+        F[ManagerThread]
+    end
+    
+    subgraph "数据层"
+        G[Task对象]
+        H[线程状态]
+    end
+    
+    A --> C
+    B --> A
+    C --> D
+    C --> E
+    C --> F
+    D --> G
+    E --> H
+    F --> H
+```
+
+---
 
 ## 线程状态管理
 
-### 状态定义
-- **0**：空闲状态（线程等待任务）
-- **1**：忙碌状态（线程正在执行任务）
-- **-1**：退出状态（线程已退出）
+- **0**：空闲（等待任务）
+- **1**：忙碌（执行任务）
+- **-1**：退出（线程已销毁）
 
-### 状态流转
-```
-创建线程 → 空闲(0) → 忙碌(1) → 空闲(0) → 退出(-1)
-```
+状态流转：  
+`创建线程 → 空闲(0) → 忙碌(1) → 空闲(0) → 退出(-1)`
+
+---
 
 ## 动态线程管理
 
-### 扩容策略
-- **触发条件**：任务数 > 存活线程数 且 存活线程数 < 最大线程数
-- **扩容速度**：每次最多创建2个线程
-- **检查频率**：每5秒检查一次
+- **扩容**：任务数 > 存活线程数 且 存活线程数 < 最大线程数，每次最多创建2个线程，每5秒检查一次
+- **缩容**：忙线程数 × 2 < 存活线程数 且 存活线程数 > 最小线程数，每次最多销毁2个线程
 
-### 缩容策略
-- **触发条件**：忙线程数 × 2 < 存活线程数 且 存活线程数 > 最小线程数
-- **缩容速度**：每次最多销毁2个线程
+---
 
 ## 使用方法
 
-### 1. 启动线程池
-1. 设置最小线程数和最大线程数
-2. 点击"开始"按钮启动线程池
+1. 设置最小/最大线程数，点击“开始”启动线程池
+2. 点击“添加任务”生成并添加任务
+3. 实时监控线程状态、任务队列、统计信息和日志
+4. 点击“清空队列”可清空等待任务
+5. 点击“停止”安全关闭线程池
 
-### 2. 添加任务
-1. 点击"添加任务"按钮
-2. 系统自动生成模拟任务并添加到队列
-3. 任务会被空闲线程自动执行
-
-### 3. 监控状态
-- **线程状态区**：查看当前工作线程和空闲线程
-- **任务队列区**：查看任务执行状态
-- **统计信息区**：查看实时统计数据
-- **运行日志区**：查看详细运行日志
-
-### 4. 清空队列
-- 点击"清空队列"按钮清空等待执行的任务
-
-### 5. 停止线程池
-- 点击"停止"按钮安全关闭线程池
+---
 
 ## 技术特点
 
-### 线程安全
-- 使用 `QMutex` 保护共享资源
-- 使用 `QWaitCondition` 实现线程同步
-- 采用RAII模式自动管理锁资源
+- **线程安全**：QMutex/QWaitCondition保护共享资源
+- **信号槽机制**：UI与线程池解耦，支持跨线程通信
+- **性能优化**：延迟信号发射、智能线程管理
+- **用户体验**：实时状态更新、可视化界面、详细日志
 
-### 信号槽机制
-- 线程池与UI通过信号槽解耦
-- 支持跨线程信号传递
-- 自动处理线程间通信
-
-### 性能优化
-- 延迟信号发射避免连接时机问题
-- 智能线程管理减少资源浪费
-- 高效的任务调度算法
-
-### 用户体验
-- 实时状态更新
-- 直观的可视化界面
-- 详细的运行日志
+---
 
 ## 编译运行
 
-### 环境要求
-- Qt 6.x
-- C++17 或更高版本
-- 支持C++的编译器（MSVC、GCC、Clang）
+- Qt 6.x，C++17及以上
+- 用Qt Creator打开 `ThreadPool.pro`，配置编译环境，点击运行
 
-### 编译步骤
-1. 使用Qt Creator打开 `ThreadPool.pro`
-2. 配置编译环境
-3. 点击运行按钮
-
-### 运行效果
-- 线程池启动后显示创建日志
-- 添加任务后实时更新队列状态
-- 线程状态动态变化
-- 管理者线程自动调整线程数量
+---
 
 ## 扩展建议
 
-### 功能扩展
-- 支持自定义任务函数
-- 添加任务优先级
-- 支持任务取消和暂停
-- 添加性能监控图表
+- 支持自定义任务函数、任务优先级、任务取消/暂停
+- 性能监控图表、配置持久化、异常处理、内存管理优化、多线程池支持
 
-### 技术优化
-- 实现线程池配置持久化
-- 添加异常处理机制
-- 优化内存管理策略
-- 支持多线程池管理
+---
 
 ## 总结
 
-本项目展示了Qt框架在并发编程中的强大能力，通过信号槽机制实现了线程池与UI的完美结合。代码结构清晰，功能完整，具有良好的可扩展性和维护性。
+本项目展示了Qt在并发编程中的强大能力，通过信号槽机制实现了线程池与UI的高效结合。代码结构清晰，功能完整，易于扩展和维护。
+
+---

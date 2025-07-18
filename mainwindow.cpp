@@ -51,8 +51,6 @@ void MainWindow::on_startButton_clicked()
     ui->idleThreadList->clear();
     ui->workingThreadList->clear();
 
-    //在构造函数里已经有了 m_pool->broadcastThreadStateChanged();
-
     updateStatistics();
     
 }
@@ -155,9 +153,9 @@ void MainWindow::on_maxThreadSpinBox_valueChanged(int arg1)
     }
 }
 
-void MainWindow::onTaskCompleted(int taskId)
+void MainWindow::onTaskCompleted()
 {
-    // 移除执行队列最前面的任务
+    // 移除任务执行队列最前面的任务
     if (ui->runningTaskList->count() > 0) {
         QListWidgetItem* item = ui->runningTaskList->takeItem(0);
         ui->finishedTaskList->addItem(item);
@@ -166,16 +164,22 @@ void MainWindow::onTaskCompleted(int taskId)
 
 void MainWindow::onTaskRemoved()
 {
-    // 从等待队列移除最前面的任务
+    // 移除任务等待队列最前面的任务
     if (ui->waitingTaskList->count() > 0) {
         QListWidgetItem* item = ui->waitingTaskList->takeItem(0);
         ui->runningTaskList->addItem(item);
     }
 }
 
-void MainWindow::onThreadStateChanged(int threadId, int state)
+void MainWindow::onThreadStateChanged(int threadId)
 {
+    if (!m_pool) {
+        return;
+    }
     QString threadName = QString("线程 %1").arg(threadId);
+    // 获得线程状态
+    int state = m_pool->getThreadState(threadId);
+
 
     // 先从两个列表中移除该线程（防止重复）
     auto removeFromList = [&](QListWidget* list) {
@@ -193,29 +197,77 @@ void MainWindow::onThreadStateChanged(int threadId, int state)
     } else if (state == 0) {
         ui->idleThreadList->addItem(threadName);
     }
+    // state == -1 线程退出 不添加到任何列表
 }
 
 void MainWindow::updateStatistics()
 {
-    // 线程相关
-    int totalThreads = ui->workingThreadList->count() + ui->idleThreadList->count();
-    int busyThreads = ui->workingThreadList->count();
-    int idleThreads = ui->idleThreadList->count();
+    // 检查线程池是否还存在
+    if (!m_pool) {
+        // 线程池不存在时，所有计数为0
+        ui->totalThreadsLabel->setText("总线程:0");
+        ui->busyThreadsLabel->setText("忙线程:0");
+        ui->idleThreadsLabel->setText("空闲线程:0");
+        ui->waitingTaskLabel->setText("等待执行任务:0");
+        ui->runningTaskLabel->setText("正在执行任务:0");
+        ui->finishedTasksLabel->setText("已完成任务:0");
+        return;
+    }
 
-    // 任务相关
-    int waitingTasks = ui->waitingTaskList->count();
-    int runningTasks = ui->runningTaskList->count();
-    int finishedTasks = ui->finishedTaskList->count();
+    // 从线程池获取真实数据
+    int poolTotalThreads = m_pool->getAliveNumber();
+    int poolBusyThreads = m_pool->getBusyNumber();
+    int poolIdleThreads = poolTotalThreads - poolBusyThreads;
 
-    // 更新线程相关标签
-    ui->totalThreadsLabel->setText(QString("总线程:%1").arg(totalThreads));
-    ui->busyThreadsLabel->setText(QString("忙线程:%1").arg(busyThreads));
-    ui->idleThreadsLabel->setText(QString("空闲线程:%1").arg(idleThreads));
+    int poolWaitingTasks = m_pool->getWaitingTaskNumber();
+    int poolRunningTasks = m_pool->getRunningTaskNumber();
+    int poolFinishedTasks = m_pool->getFinishedTaskNumber();
 
-    // 更新任务相关标签
-    ui->waitingTaskLabel->setText(QString("等待执行任务:%1").arg(waitingTasks));
-    ui->runningTaskLabel->setText(QString("正在执行任务:%1").arg(runningTasks));
-    ui->finishedTasksLabel->setText(QString("已完成任务:%1").arg(finishedTasks));
+    // 从UI获取显示数据
+    int uiTotalThreads = ui->workingThreadList->count() + ui->idleThreadList->count();
+    int uiBusyThreads = ui->workingThreadList->count();
+    int uiIdleThreads = ui->idleThreadList->count();
+
+    int uiWaitingTasks = ui->waitingTaskList->count();
+    int uiRunningTasks = ui->runningTaskList->count();
+    int uiFinishedTasks = ui->finishedTaskList->count();
+
+    // 检查一致性
+    bool threadsConsistent = (poolTotalThreads == uiTotalThreads) && 
+        (poolBusyThreads == uiBusyThreads) && 
+        (poolIdleThreads == uiIdleThreads);
+
+    bool tasksConsistent = (poolWaitingTasks == uiWaitingTasks) && 
+        (poolRunningTasks == uiRunningTasks) && 
+        (poolFinishedTasks == uiFinishedTasks);
+
+    // 如果数据不一致，使用线程池的真实数据，并记录错误
+    if (!threadsConsistent || !tasksConsistent) {
+        qDebug() << "[数据不一致] 线程池数据 vs UI数据:";
+        qDebug() << "  线程总数:" << poolTotalThreads << "vs" << uiTotalThreads;
+        qDebug() << "  忙碌线程:" << poolBusyThreads << "vs" << uiBusyThreads;
+        qDebug() << "  空闲线程:" << poolIdleThreads << "vs" << uiIdleThreads;
+        qDebug() << "  等待任务:" << poolWaitingTasks << "vs" << uiWaitingTasks;
+        qDebug() << "  执行任务:" << poolRunningTasks << "vs" << uiRunningTasks;
+        qDebug() << "  完成任务:" << poolFinishedTasks << "vs" << uiFinishedTasks;
+    }
+    // // 更新线程相关标签
+    // ui->totalThreadsLabel->setText(QString("总线程:%1").arg(totalThreads));
+    // ui->busyThreadsLabel->setText(QString("忙线程:%1").arg(busyThreads));
+    // ui->idleThreadsLabel->setText(QString("空闲线程:%1").arg(idleThreads));
+
+    // // 更新任务相关标签
+    // ui->waitingTaskLabel->setText(QString("等待执行任务:%1").arg(waitingTasks));
+    // ui->runningTaskLabel->setText(QString("正在执行任务:%1").arg(runningTasks));
+    // ui->finishedTasksLabel->setText(QString("已完成任务:%1").arg(finishedTasks));
+
+    // 使用线程池的真实数据更新显示
+    ui->totalThreadsLabel->setText(QString("总线程:%1").arg(poolTotalThreads));
+    ui->busyThreadsLabel->setText(QString("忙线程:%1").arg(poolBusyThreads));
+    ui->idleThreadsLabel->setText(QString("空闲线程:%1").arg(poolIdleThreads));
+    ui->waitingTaskLabel->setText(QString("等待执行任务:%1").arg(poolWaitingTasks));
+    ui->runningTaskLabel->setText(QString("正在执行任务:%1").arg(poolRunningTasks));
+    ui->finishedTasksLabel->setText(QString("已完成任务:%1").arg(poolFinishedTasks));
 }
 
 void MainWindow::onLogMessage(const QString& msg)

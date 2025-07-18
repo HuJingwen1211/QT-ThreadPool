@@ -29,7 +29,7 @@ void ThreadPool::WorkerThread::run()
         while (m_pool->m_taskQ->taskNumber() == 0 && !m_pool->m_shutdown)
         {
             // 阻塞线程
-            qDebug() << "线程池开启且任务队列为空，阻塞！thread" << m_id << "waiting...";
+            // qDebug() << "线程池开启且任务队列为空，阻塞！thread" << m_id << "waiting...";
             m_pool->m_notEmpty.wait(&m_pool->m_lock);
 
             // 解除阻塞后,检查是否需要销毁线程
@@ -39,7 +39,8 @@ void ThreadPool::WorkerThread::run()
                 if (m_pool->m_aliveNum > m_pool->m_minNum)
                 {
                     m_pool->m_aliveNum--;
-                    emit m_pool->threadStateChanged(m_id, -1);  // 先发射状态变化信号
+                    setState(-1);   // 线程退出
+                    emit m_pool->threadStateChanged(m_id);  // 先发射状态变化信号
                     m_pool->m_lock.unlock();
                     m_pool->threadExit(m_id);
                     return;
@@ -50,7 +51,8 @@ void ThreadPool::WorkerThread::run()
         // 检查线程池是否关闭
         if (m_pool->m_shutdown) // 若关闭
         {
-            emit m_pool->threadStateChanged(m_id, -1);
+            setState(-1);
+            emit m_pool->threadStateChanged(m_id);
             m_pool->m_lock.unlock();
             m_pool->threadExit(m_id);
             return;
@@ -60,7 +62,8 @@ void ThreadPool::WorkerThread::run()
         // 从任务队列取出任务
         Task task = m_pool->m_taskQ->takeTask();
         m_pool->m_busyNum++;
-        emit m_pool->threadStateChanged(m_id, 1);    // 发送信号
+        setState(1);    // 设置忙碌状态
+        emit m_pool->threadStateChanged(m_id);    // 发送信号
         m_pool->m_lock.unlock();
 
         // 执行任务
@@ -76,7 +79,9 @@ void ThreadPool::WorkerThread::run()
         qDebug() << "任务处理结束，thread" << m_id << "end working...";
         m_pool->m_lock.lock();
         m_pool->m_busyNum--;
-        emit m_pool->threadStateChanged(m_id, 0);
+        m_pool->m_finishedTasks++;
+        setState(0);    // 设置空闲状态
+        emit m_pool->threadStateChanged(m_id);
         emit m_pool->taskCompleted(task.id);
         emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
         m_pool->m_lock.unlock();
@@ -115,9 +120,10 @@ void ThreadPool::ManagerThread::run()
                 WorkerThread* thread = new WorkerThread(m_pool, m_pool->m_aliveNum + 1);
                 m_pool->m_threads.append(thread);
                 thread->start();
+                thread->setState(0);
                 m_pool->m_aliveNum++;
                 emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(m_pool->m_aliveNum));
-                emit m_pool->threadStateChanged(m_pool->m_aliveNum, false);
+                emit m_pool->threadStateChanged(m_pool->m_aliveNum);
             }
             m_pool->m_lock.unlock();
         }
@@ -155,26 +161,17 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
         m_threads.append(thread);
         thread->start();
         m_aliveNum++;
-        // emit logMessage(QString("[线程池]创建子线程, ID: %1").arg(i + 1));
-        // emit threadStateChanged(i + 1, false);
-        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1, 0);
+        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1);
     }
     // 创建管理者线程
     m_managerThread = new ManagerThread(this);
     m_managerThread->start();
-    // emit logMessage("[线程池]创建管理者线程");
     emitDelayedSignal(QString("[线程池]创建管理者线程"));
 
     connect(m_taskQ, &TaskQueue::taskAdded, this, &ThreadPool::onTaskAdded);
     connect(m_taskQ, &TaskQueue::taskRemoved, this, &ThreadPool::taskRemoved);
 
-    // emit logMessage(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
     emitDelayedSignal(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
-
-    // 延迟广播线程状态，确保信号已连接
-    // QTimer::singleShot(0, this, [this]() {
-    //     broadcastThreadStateChanged();
-    // });
 }
 
 ThreadPool::~ThreadPool()
@@ -228,14 +225,37 @@ void ThreadPool::addTask(int id, callback func, void* arg)
     m_taskQ->addTask(id, func, arg);
     emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
 }
+/// 任务相关/////////
+// 获取任务队列中等待任务个数
+int ThreadPool::getWaitingTaskNumber() const
+{
+    return m_taskQ->taskNumber();
+}
 
-int ThreadPool::getAliveNumber()
+// 获取任务队列中正在执行任务个数
+int ThreadPool::getRunningTaskNumber() const
+{
+    QMutexLocker locker(&m_lock);
+    return m_busyNum;   // 忙碌的线程个数 = 正在执行任务的个数
+}
+
+// 获取任务队列中已完成任务个数
+int ThreadPool::getFinishedTaskNumber() const
+{
+    QMutexLocker locker(&m_lock);
+    return m_finishedTasks;
+}
+
+
+/// 线程相关/////////
+
+int ThreadPool::getAliveNumber() const
 {
     QMutexLocker locker(&m_lock);
     return m_aliveNum;
 }
 
-int ThreadPool::getBusyNumber()
+int ThreadPool::getBusyNumber() const
 {
     QMutexLocker locker(&m_lock);
     return m_busyNum;
@@ -249,10 +269,7 @@ void ThreadPool::onTaskAdded()
     // emit logMessage("[线程池]任务已添加到队列");
 }
 
-// void ThreadPool::onTaskRemoved()
-// {
-//     emit logMessage("任务已从队列取出");
-// }
+
 
 void ThreadPool::threadExit(int threadId)
 {
@@ -275,25 +292,30 @@ void ThreadPool::clearTaskQueue()
     emit logMessage("[线程池]任务队列已清空");
 }
 
-// // 广播线程状态变化
-// void ThreadPool::broadcastThreadStateChanged()
-// {
-//     QMutexLocker locker(&m_lock);
-//     for (WorkerThread* thread : m_threads)
-//     {
-//         emit threadStateChanged(thread->id(), false);
-//     }
-// }
+
 
 // 构造函数中，延迟广播线程状态变化
-void ThreadPool::emitDelayedSignal(const QString& logMsg, int threadId, int state)
+void ThreadPool::emitDelayedSignal(const QString& logMsg, int threadId)
 {
-    QTimer::singleShot(0, this, [this, logMsg, threadId, state]() {
+    QTimer::singleShot(0, this, [this, logMsg, threadId]() {
         if (threadId != -1) {
-            emit threadStateChanged(threadId, state);
+            emit threadStateChanged(threadId);
         }
         if (!logMsg.isEmpty()) {
             emit logMessage(logMsg);
         }
     });
+}
+
+int ThreadPool::getThreadState(int threadId) const
+{
+    QMutexLocker locker(&m_lock);
+    for (auto thread : m_threads)
+    {
+        if (thread->id() == threadId)
+        {
+            return thread->state();
+        }
+    }
+    return -1;
 }

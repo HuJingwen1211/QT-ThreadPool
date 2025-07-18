@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
+    poolview.cpp \
     taskqueue.cpp \
     threadpool.cpp
 
 HEADERS += \
     mainwindow.h \
+    poolview.h \
     taskqueue.h \
     threadpool.h
 

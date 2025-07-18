@@ -39,7 +39,7 @@ public:
     Task takeTask();
 
     // 获取当前队列中任务个数
-    inline int taskNumber()
+    inline int taskNumber() const
     {
         // QMutexLocker自动加锁解锁，防止死锁
         QMutexLocker locker(&m_mutex);
@@ -57,7 +57,7 @@ signals:
 
 
 private:
-    QMutex m_mutex;        // Qt互斥锁，替代pthread_mutex_t
+    mutable QMutex m_mutex;        // Qt互斥锁，替代pthread_mutex_t
     QQueue<Task> m_queue;  // Qt队列，替代std::queue
 };
 

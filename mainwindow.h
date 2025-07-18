@@ -30,11 +30,11 @@ private slots:
     void on_clearQueueButton_clicked();
 
     // 线程池信号处理
-    void onTaskCompleted(int taskId);
+    void onTaskCompleted();
 
     void onTaskRemoved();
 
-    void onThreadStateChanged(int threadId, int state);
+    void onThreadStateChanged(int threadId);
 
     void onLogMessage(const QString& msg);
 
