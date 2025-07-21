@@ -7,6 +7,7 @@
 #include <QList>
 #include <QWaitCondition>
 #include "taskqueue.h"
+#include "visualinfo.h"
 
 /*
  * 说明：
@@ -21,7 +22,7 @@ class ThreadPool : public QObject
 public:
     ThreadPool(int min, int max);
     ~ThreadPool();
-    
+
     /// 任务相关/////////
     // 添加任务
     void addTask(Task task);
@@ -42,6 +43,8 @@ public:
     int getThreadState(int threadId) const;
     // 清空任务队列
     void clearTaskQueue();
+    // 获得线程可视化信息
+    QList<ThreadVisualInfo> getThreadVisualInfo() const;
 
 
 

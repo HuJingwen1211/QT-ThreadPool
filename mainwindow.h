@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include "threadpool.h"
+#include "poolview.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -27,7 +28,7 @@ private slots:
 
     void on_addTaskButton_clicked();
 
-    void on_clearQueueButton_clicked();
+    void on_clearLogButton_clicked();
 
     // 线程池信号处理
     void onTaskCompleted();
@@ -49,6 +50,10 @@ private slots:
 private:
     Ui::MainWindow *ui;
     ThreadPool *m_pool;
+    
+    // PoolView* m_poolView;
+    // ui中，把poolGraphicsView提升为PoolView
+
     int m_totalTasks = 0;
 };
 #endif // MAINWINDOW_H

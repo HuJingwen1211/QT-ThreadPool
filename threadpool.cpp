@@ -225,6 +225,9 @@ void ThreadPool::addTask(int id, callback func, void* arg)
     m_taskQ->addTask(id, func, arg);
     emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
 }
+
+
+
 /// 任务相关/////////
 // 获取任务队列中等待任务个数
 int ThreadPool::getWaitingTaskNumber() const
@@ -318,4 +321,19 @@ int ThreadPool::getThreadState(int threadId) const
         }
     }
     return -1;
+}
+
+QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
+{
+    QList<ThreadVisualInfo> threadInfos;
+    QMutexLocker locker(&m_lock);
+    for (auto thread : m_threads)
+    {
+        ThreadVisualInfo info;
+        info.threadId = thread->id();
+        info.state = thread->state();
+        // 更多字段待补充
+        threadInfos.append(info);   
+    }
+    return threadInfos;
 }

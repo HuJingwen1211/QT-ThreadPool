@@ -5,13 +5,18 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , m_pool(nullptr)
+    // , m_poolView(new PoolView(this))    //  在构造函数初始化列表里直接 new 了一个 PoolView 对象，并赋值给 m_poolView。
 {
     ui->setupUi(this);
 
     // 初始化UI状态
     ui->stopButton->setEnabled(false);
     ui->addTaskButton->setEnabled(false);
-    ui->clearQueueButton->setEnabled(false);
+    // ui->clearLogButton->setEnabled(false);
+
+
+    // 初始化可视化UI
+    // ui->poolGraphicsView->setScene(m_poolView->scene());
 }
 
 MainWindow::~MainWindow()
@@ -45,7 +50,7 @@ void MainWindow::on_startButton_clicked()
     ui->startButton->setEnabled(false);
     ui->stopButton->setEnabled(true);
     ui->addTaskButton->setEnabled(true);
-    ui->clearQueueButton->setEnabled(true);
+    ui->clearLogButton->setEnabled(true);
 
     // 清空线程区（不需要手动for循环初始化idleThreadList）
     ui->idleThreadList->clear();
@@ -67,7 +72,7 @@ void MainWindow::on_stopButton_clicked()
     // 2. 禁用相关按钮
     ui->stopButton->setEnabled(false);
     ui->addTaskButton->setEnabled(false);
-    ui->clearQueueButton->setEnabled(false);
+    // ui->clearLogButton->setEnabled(false);
 
     // 3. 启用“开始”按钮
     ui->startButton->setEnabled(true);
@@ -114,23 +119,17 @@ void MainWindow::on_addTaskButton_clicked()
 }
 
 
-void MainWindow::on_clearQueueButton_clicked()
+void MainWindow::on_clearLogButton_clicked()
 {
-    if (!m_pool) {
-        QMessageBox::warning(this, "警告", "线程池未启动");
-        return;
-    }
-    
+
     QMessageBox::StandardButton reply = QMessageBox::question(
-        this, "确认清空", "确定要清空等待任务队列吗？",
+        this, "确认清空", "确定要清空运行日志吗？",
         QMessageBox::Yes | QMessageBox::No
     );
     
     if (reply == QMessageBox::Yes) {
-        m_pool->clearTaskQueue();
-        ui->waitingTaskList->clear();
+        ui->logTextBrowser->clear();
     }
-    updateStatistics();
 }
 
 
@@ -180,7 +179,7 @@ void MainWindow::onThreadStateChanged(int threadId)
     // 获得线程状态
     int state = m_pool->getThreadState(threadId);
 
-
+    /// 1.文字UI更新
     // 先从两个列表中移除该线程（防止重复）
     auto removeFromList = [&](QListWidget* list) {
         QList<QListWidgetItem*> items = list->findItems(threadName, Qt::MatchExactly);
@@ -198,6 +197,12 @@ void MainWindow::onThreadStateChanged(int threadId)
         ui->idleThreadList->addItem(threadName);
     }
     // state == -1 线程退出 不添加到任何列表
+
+
+    /// 2.可视化UI更新
+    QList<ThreadVisualInfo> threadInfos = m_pool->getThreadVisualInfo();
+    // m_poolView->visualizeThreads(threadInfos);
+    ui->poolGraphicsView->visualizeThreads(threadInfos);
 }
 
 void MainWindow::updateStatistics()

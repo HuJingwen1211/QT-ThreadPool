@@ -19,7 +19,8 @@ HEADERS += \
     mainwindow.h \
     poolview.h \
     taskqueue.h \
-    threadpool.h
+    threadpool.h \
+    visualinfo.h
 
 FORMS += \
     mainwindow.ui

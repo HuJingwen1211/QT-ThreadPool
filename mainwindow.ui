@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>489</width>
+    <width>496</width>
     <height>579</height>
    </rect>
   </property>
@@ -77,9 +77,9 @@
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="clearQueueButton">
+        <widget class="QPushButton" name="clearLogButton">
          <property name="text">
-          <string>清空队列</string>
+          <string>清空日志</string>
          </property>
         </widget>
        </item>
@@ -221,7 +221,7 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_5">
           <item>
-           <widget class="QGraphicsView" name="graphicsView"/>
+           <widget class="PoolView" name="poolGraphicsView"/>
           </item>
          </layout>
         </widget>
@@ -255,13 +255,20 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>489</width>
+     <width>496</width>
      <height>18</height>
     </rect>
    </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>PoolView</class>
+   <extends>QGraphicsView</extends>
+   <header location="global">poolview.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
