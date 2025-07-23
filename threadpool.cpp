@@ -41,6 +41,7 @@ void ThreadPool::WorkerThread::run()
                     m_pool->m_aliveNum--;
                     setState(-1);   // 线程退出
                     emit m_pool->threadStateChanged(m_id);  // 先发射状态变化信号
+                    emit m_pool->taskListChanged(); // 任务列表变化
                     m_pool->m_lock.unlock();
                     m_pool->threadExit(m_id);
                     return;
@@ -53,6 +54,7 @@ void ThreadPool::WorkerThread::run()
         {
             setState(-1);
             emit m_pool->threadStateChanged(m_id);
+            emit m_pool->taskListChanged(); // 任务列表变化
             m_pool->m_lock.unlock();
             m_pool->threadExit(m_id);
             return;
@@ -61,9 +63,12 @@ void ThreadPool::WorkerThread::run()
         // 程序执行到这:说明任务队列不为空,且线程池运行
         // 从任务队列取出任务
         Task task = m_pool->m_taskQ->takeTask();
+        int curTaskId = task.id;
         m_pool->m_busyNum++;
         setState(1);    // 设置忙碌状态
+        setCurTaskId(curTaskId);
         emit m_pool->threadStateChanged(m_id);    // 发送信号
+        emit m_pool->taskListChanged(); // 任务列表变化
         m_pool->m_lock.unlock();
 
         // 执行任务
@@ -82,6 +87,7 @@ void ThreadPool::WorkerThread::run()
         m_pool->m_finishedTasks++;
         setState(0);    // 设置空闲状态
         emit m_pool->threadStateChanged(m_id);
+        emit m_pool->taskListChanged(); // 任务列表变化
         emit m_pool->taskCompleted(task.id);
         emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
         m_pool->m_lock.unlock();
@@ -169,7 +175,7 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
     emitDelayedSignal(QString("[线程池]创建管理者线程"));
 
     connect(m_taskQ, &TaskQueue::taskAdded, this, &ThreadPool::onTaskAdded);
-    connect(m_taskQ, &TaskQueue::taskRemoved, this, &ThreadPool::taskRemoved);
+    // connect(m_taskQ, &TaskQueue::taskRemoved, this, &ThreadPool::taskRemoved);
 
     emitDelayedSignal(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
 }
@@ -217,6 +223,7 @@ void ThreadPool::addTask(Task task)
     // 添加任务，不需要加锁，任务队列中有锁
     m_taskQ->addTask(task);
     emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(task.id));
+    emit taskListChanged();
 }
 
 void ThreadPool::addTask(int id, callback func, void* arg)
@@ -224,6 +231,7 @@ void ThreadPool::addTask(int id, callback func, void* arg)
     if (m_shutdown) return;
     m_taskQ->addTask(id, func, arg);
     emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
+    emit taskListChanged();
 }
 
 
@@ -279,21 +287,7 @@ void ThreadPool::threadExit(int threadId)
     emit logMessage(QString("[线程池]线程 %1 退出").arg(threadId));
 }
 
-void ThreadPool::clearTaskQueue()
-{
-    if (m_shutdown) {
-        emit logMessage("[线程池]已关闭，无法清空任务队列");
-        return;
-    }
-    
-    if (!m_taskQ) {
-        emit logMessage("[线程池]任务队列不存在，无法清空");
-        return;
-    }
-    
-    m_taskQ->clearQueue();
-    emit logMessage("[线程池]任务队列已清空");
-}
+
 
 
 
@@ -332,8 +326,34 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
         ThreadVisualInfo info;
         info.threadId = thread->id();
         info.state = thread->state();
+        info.curTaskId = thread->curTaskId();
         // 更多字段待补充
         threadInfos.append(info);   
     }
     return threadInfos;
+}
+
+QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
+{
+    QList<TaskVisualInfo> waitingTaskInfos;
+    QMutexLocker locker(&m_lock);
+    for (auto task : m_taskQ->getTasks())
+    {
+        TaskVisualInfo info;
+        info.taskId = task.id;
+        info.state = 0; // waiting
+        info.curThreadId = -1;
+        waitingTaskInfos.append(info);
+    }
+    return waitingTaskInfos;
+}
+QList<TaskVisualInfo> ThreadPool::getFinishedTaskVisualInfo() const
+{
+    QList<TaskVisualInfo> finishedTaskInfos;
+    // QMutexLocker locker(&m_lock);
+    // for (auto task : m_taskQ)
+    // {
+    //     TaskVisualInfo info;
+    // }
+    return finishedTaskInfos;
 }

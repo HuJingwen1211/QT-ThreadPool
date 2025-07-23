@@ -50,6 +50,13 @@ Task TaskQueue::takeTask()
     return t;
 }
 
+QList<Task> TaskQueue::getTasks() const
+{
+    QMutexLocker locker(&m_mutex);
+    // toList返回的列表顺序和队列一致
+    return m_queue.toList();
+}
+
 void TaskQueue::clearQueue()
 {
     QMutexLocker locker(&m_mutex);

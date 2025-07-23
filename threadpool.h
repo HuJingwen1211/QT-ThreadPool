@@ -41,12 +41,11 @@ public:
     int getAliveNumber() const;
     // 获取线程状态
     int getThreadState(int threadId) const;
-    // 清空任务队列
-    void clearTaskQueue();
     // 获得线程可视化信息
     QList<ThreadVisualInfo> getThreadVisualInfo() const;
-
-
+    // 获得任务可视化信息
+    QList<TaskVisualInfo> getWaitingTaskVisualInfo() const;
+    QList<TaskVisualInfo> getFinishedTaskVisualInfo() const;
 
 signals:
     // 线程状态变化、任务完成、日志输出（方便UI联动）
@@ -54,6 +53,7 @@ signals:
     void taskCompleted(int taskId);
     void taskRemoved();
     void logMessage(const QString& message);
+    void taskListChanged();
 
 private slots:
     void onTaskAdded();
@@ -62,6 +62,21 @@ private:
     void threadExit(int threadId);
     void emitDelayedSignal(const QString& logMsg = "", int threadId = -1);
 
+/*
+    QThread 线程类核心说明
+    - start()    // 启动线程，自动调用 run()
+    - run()      // 线程主函数，写线程要做的事（本项目：取任务并执行）
+    - exec()     // 启动事件循环（本项目未用）
+    - quit()     // 退出事件循环（本项目未用）
+    - wait()     // 等待线程结束（析构时用）
+    - 信号槽     // 线程与主线程通信（如任务完成、状态变化）
+
+    【本项目流程简述】
+    - WorkerThread 继承 QThread，重写 run()，实现线程池工作循环。
+    - 线程池用 start() 启动线程，run() 里不断取任务、执行任务、更新状态。
+    - 线程状态和当前任务ID通过成员变量和信号槽与主线程/UI联动。
+    - 析构时用 wait() 等待所有线程安全退出。
+*/
     // 工作线程类，继承QThread，重写run方法
     class WorkerThread : public QThread
     {
@@ -72,10 +87,15 @@ private:
         // 新增state字段，线程状态：0=空闲, 1=忙碌, -1=退出
         int state() const { return m_state; }   // 内部使用，如果外部使用需要用getThreadState()
         void setState(int state) { m_state = state; }
+        // 新增curTaskId字段：线程忙碌时正在处理的task的id
+        int curTaskId() const { return m_curTaskId; }
+        void setCurTaskId(int curTaskId) { m_curTaskId = curTaskId; }
+
     private:
         ThreadPool* m_pool;
         int m_id;
         int m_state = 0; // 0=空闲, 1=忙碌, -1=退出
+        int m_curTaskId = -1;
     };
 
     // 管理者线程类，继承QThread，重写run方法

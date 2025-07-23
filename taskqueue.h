@@ -37,7 +37,8 @@ public:
 
     // 取出一个任务
     Task takeTask();
-
+    // 获取所有任务
+    QList<Task> getTasks() const;
     // 获取当前队列中任务个数
     inline int taskNumber() const
     {

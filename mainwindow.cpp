@@ -44,7 +44,15 @@ void MainWindow::on_startButton_clicked()
     // 更新统计信息
     connect(m_pool, &ThreadPool::threadStateChanged, this, &MainWindow::updateStatistics);
     connect(m_pool, &ThreadPool::taskCompleted, this, &MainWindow::updateStatistics);
-    connect(m_pool, &ThreadPool::taskRemoved, this, &MainWindow::updateStatistics);
+    // connect(m_pool, &ThreadPool::taskRemoved, this, &MainWindow::updateStatistics);
+
+    // 任务列表变化 注意这里容易访问到已经释放的m_pool导致崩溃!
+    connect(m_pool, &ThreadPool::taskListChanged, this, [this]() {
+        QList<ThreadVisualInfo> threadInfos = m_pool->getThreadVisualInfo();
+        QList<TaskVisualInfo> waitingTasks = m_pool->getWaitingTaskVisualInfo();
+        QList<TaskVisualInfo> finishedTasks = m_pool->getFinishedTaskVisualInfo();
+        ui->poolGraphicsView->visualizeAll(threadInfos, waitingTasks, finishedTasks);
+    });
 
     // 更新UI状态
     ui->startButton->setEnabled(false);
@@ -65,6 +73,7 @@ void MainWindow::on_stopButton_clicked()
 {
     // 1. 检查线程池是否存在
     if (m_pool) {
+        disconnect(m_pool, &ThreadPool::taskListChanged, this, nullptr); // 断开taskListChanged信号槽
         delete m_pool;      // 安全析构线程池，等待所有线程退出
         m_pool = nullptr;
     }
@@ -84,6 +93,7 @@ void MainWindow::on_stopButton_clicked()
 
     ui->workingThreadList->clear();
     ui->idleThreadList->clear();
+    ui->poolGraphicsView->clear();
 
     
     updateStatistics();
@@ -200,9 +210,12 @@ void MainWindow::onThreadStateChanged(int threadId)
 
 
     /// 2.可视化UI更新
+
+    // 线程池 + 任务可视化更新
     QList<ThreadVisualInfo> threadInfos = m_pool->getThreadVisualInfo();
-    // m_poolView->visualizeThreads(threadInfos);
-    ui->poolGraphicsView->visualizeThreads(threadInfos);
+    QList<TaskVisualInfo> waitingTasks = m_pool->getWaitingTaskVisualInfo();
+    QList<TaskVisualInfo> finishedTasks = m_pool->getFinishedTaskVisualInfo();
+    ui->poolGraphicsView->visualizeAll(threadInfos, waitingTasks, finishedTasks);
 }
 
 void MainWindow::updateStatistics()
@@ -246,25 +259,16 @@ void MainWindow::updateStatistics()
         (poolRunningTasks == uiRunningTasks) && 
         (poolFinishedTasks == uiFinishedTasks);
 
-    // 如果数据不一致，使用线程池的真实数据，并记录错误
-    if (!threadsConsistent || !tasksConsistent) {
-        qDebug() << "[数据不一致] 线程池数据 vs UI数据:";
-        qDebug() << "  线程总数:" << poolTotalThreads << "vs" << uiTotalThreads;
-        qDebug() << "  忙碌线程:" << poolBusyThreads << "vs" << uiBusyThreads;
-        qDebug() << "  空闲线程:" << poolIdleThreads << "vs" << uiIdleThreads;
-        qDebug() << "  等待任务:" << poolWaitingTasks << "vs" << uiWaitingTasks;
-        qDebug() << "  执行任务:" << poolRunningTasks << "vs" << uiRunningTasks;
-        qDebug() << "  完成任务:" << poolFinishedTasks << "vs" << uiFinishedTasks;
-    }
-    // // 更新线程相关标签
-    // ui->totalThreadsLabel->setText(QString("总线程:%1").arg(totalThreads));
-    // ui->busyThreadsLabel->setText(QString("忙线程:%1").arg(busyThreads));
-    // ui->idleThreadsLabel->setText(QString("空闲线程:%1").arg(idleThreads));
-
-    // // 更新任务相关标签
-    // ui->waitingTaskLabel->setText(QString("等待执行任务:%1").arg(waitingTasks));
-    // ui->runningTaskLabel->setText(QString("正在执行任务:%1").arg(runningTasks));
-    // ui->finishedTasksLabel->setText(QString("已完成任务:%1").arg(finishedTasks));
+    // // 如果数据不一致，使用线程池的真实数据，并记录错误
+    // if (!threadsConsistent || !tasksConsistent) {
+    //     qDebug() << "[数据不一致] 线程池数据 vs UI数据:";
+    //     qDebug() << "  线程总数:" << poolTotalThreads << "vs" << uiTotalThreads;
+    //     qDebug() << "  忙碌线程:" << poolBusyThreads << "vs" << uiBusyThreads;
+    //     qDebug() << "  空闲线程:" << poolIdleThreads << "vs" << uiIdleThreads;
+    //     qDebug() << "  等待任务:" << poolWaitingTasks << "vs" << uiWaitingTasks;
+    //     qDebug() << "  执行任务:" << poolRunningTasks << "vs" << uiRunningTasks;
+    //     qDebug() << "  完成任务:" << poolFinishedTasks << "vs" << uiFinishedTasks;
+    // }
 
     // 使用线程池的真实数据更新显示
     ui->totalThreadsLabel->setText(QString("总线程:%1").arg(poolTotalThreads));
