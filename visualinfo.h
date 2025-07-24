@@ -16,7 +16,7 @@ struct TaskVisualInfo {
 
 
 /*
- * TaskAnimationInfo 任务动画信息结构体
+ * TaskAnimationInfo 任务动画信息结构体：待实现
  * -----------------
  * 用于描述任务在可视化界面中的动画流转信息。支持以下三种典型动画阶段：
  *

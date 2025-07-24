@@ -313,6 +313,8 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
     QMutexLocker locker(&m_lock);
     for (auto thread : m_threads)
     {
+        // 线程退出后不显示
+        if (thread->state() == -1) continue;
         ThreadVisualInfo info;
         info.threadId = thread->id();
         info.state = thread->state();

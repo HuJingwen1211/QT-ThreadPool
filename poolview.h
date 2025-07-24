@@ -45,18 +45,6 @@ public:
     效果：按完成顺序排列，方便查看历史记录
    */
 
-/*
-    任务->线程的动画设计：
-
-    - 支持任务动画并发执行：多个任务被不同线程取走时，动画可以同时进行，互不影响。
-    - 动画触发时机：每当线程从队列取走任务，立即启动该任务节点从队列区域移动到对应线程方块的动画。
-    - 动画实现方式：每个任务节点独立使用 QPropertyAnimation，直接设置起点和终点坐标，无需排队等待。
-    - 动画轨迹：通常为直线移动，若有需要可为不同任务设置微小偏移，避免完全重叠。
-    - 动画结束处理：动画完成后，任务节点可隐藏或变为“执行中”状态，线程方块显示任务ID并变色。
-    - running->finished 动画同理：任务完成时，任务节点从线程方块移动到已完成任务区域，动画可与其他任务并发。
-    - 由于每个线程同一时刻只处理一个任务，动画轨迹虽可交叉，但不会出现任务“跑错地方”或混乱的情况。
-    - 这样设计既保证了动画的酷炫效果，又保证了逻辑的正确性和实现的简洁性。
-*/
     void visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
                       const QList<TaskVisualInfo>& waitingTasks,
                       const QList<TaskVisualInfo>& finishedTasks);
@@ -76,7 +64,6 @@ private:
     // 线程池快照：保存上一次绘制的线程信息，用于在窗口大小变化时重新绘制，不需要读线程池。
     QList<ThreadVisualInfo> m_lastThreadInfos;
     // 任务池快照
-    // QList<TaskVisualInfo> m_lastTaskInfos;
     QList<TaskVisualInfo> m_lastWaitingTasks;
     QList<TaskVisualInfo> m_lastFinishedTasks;
     
