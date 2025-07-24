@@ -30,29 +30,22 @@ private slots:
 
     void on_clearLogButton_clicked();
 
-    // 线程池信号处理
-    void onTaskCompleted();
-
-    void onTaskRemoved();
-
-    void onThreadStateChanged(int threadId);
-
+    // 日志输出
     void onLogMessage(const QString& msg);
+    // 刷新所有UI
+    void refreshAllUI();
 
     // 线程数量spinBox控制
     void on_minThreadSpinBox_valueChanged(int arg1);
 
     void on_maxThreadSpinBox_valueChanged(int arg1);
 
-    // 更新统计信息
-    void updateStatistics();
+
 
 private:
     Ui::MainWindow *ui;
     ThreadPool *m_pool;
-    
-    // PoolView* m_poolView;
-    // ui中，把poolGraphicsView提升为PoolView
+    // ui中，把poolGraphicsView提升为PoolView后,不再需要PoolView* m_poolView这个成员变量
 
     int m_totalTasks = 0;
 };

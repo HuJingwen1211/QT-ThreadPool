@@ -41,7 +41,7 @@ public:
 
     3. finished（完成状态）
     显示位置：已完成任务列表区域
-    显示方式：用列表装着已完成任务的图形
+    显示方式：用列表装着已完成任务的图形,显示完成任务ID+处理该任务的线程ID
     效果：按完成顺序排列，方便查看历史记录
    */
 
@@ -61,16 +61,12 @@ public:
                       const QList<TaskVisualInfo>& waitingTasks,
                       const QList<TaskVisualInfo>& finishedTasks);
 
-    // void visualizeThreads(const QList<ThreadVisualInfo>& threadInfos);
-    // void visualizeWaitingTasks(const QList<TaskVisualInfo>& waitingTasks);
-    // void visualizeFinishedTasks(const QList<TaskVisualInfo>& finishedTasks);
-    // void visualizeTaskAnimations(const QList<TaskAnimationInfo>& taskAnimationInfos);
+
     void clear();
 private:
     // 重写resizeEvent，在窗口大小变化时，根据快照重新绘制线程和任务,使每行显示的矩形数量自适应。
     void resizeEvent(QResizeEvent* event) override;
     // 绘制线程、等待任务、已完成任务,返回下一个可用的y坐标
-    void drawArrow(const QPointF& from, const QPointF& to, QPen pen);
     int drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY);
     int drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int baseY);
     int drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int baseY);

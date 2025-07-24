@@ -50,13 +50,6 @@ public:
     // 清空队列
     void clearQueue();
 
-signals:
-    // Qt信号槽机制，方便和UI联动
-    void taskAdded();
-    void taskRemoved();
-    void queueCleared();
-
-
 private:
     mutable QMutex m_mutex;        // Qt互斥锁，替代pthread_mutex_t
     QQueue<Task> m_queue;  // Qt队列，替代std::queue

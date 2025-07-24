@@ -3,20 +3,43 @@
 #include <QPen>
 #include <QBrush>
 #include <QScrollBar>
+namespace {
+    // 通用网格节点绘制
+    void drawGrid(
+        QGraphicsScene* scene,
+        int itemCount,
+        int itemWidth,
+        int itemHeight,
+        int spacing,
+        int rowSpacing,
+        int topSpacing,
+        int baseY,
+        std::function<void(int x, int y, int col, int idx)> drawNode
+    ) {
+        int viewWidth = scene->views().isEmpty() ? 800 : scene->views().first()->viewport()->width();
+        int maxPerRow = (viewWidth + spacing) / (itemWidth + spacing);
+        if (maxPerRow < 1) maxPerRow = 1;
+        int leftMargin = (viewWidth - maxPerRow * itemWidth - (maxPerRow - 1) * spacing) / 2;
+        if (leftMargin < 0) leftMargin = 0;
+
+        for (int i = 0; i < itemCount; ++i) {
+            int col = i % maxPerRow;
+            int x = leftMargin + col * (itemWidth + spacing);
+            int row = i / maxPerRow;
+            int y = baseY + topSpacing + row * (itemHeight + rowSpacing);
+            drawNode(x, y, col, i);
+        }
+    }
+}
 
 PoolView::PoolView(QWidget* parent) : QGraphicsView(parent) {
     m_scene = new QGraphicsScene(this); // 设置场景, 场景是绘图的容器, 会自动析构
     setScene(m_scene);
-    // // 只允许上下滚动
-    // setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    // setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setRenderHint(QPainter::Antialiasing);
     setAlignment(Qt::AlignTop | Qt::AlignLeft); // 左上角对齐
 }
 
-PoolView::~PoolView() {
-
-}
+PoolView::~PoolView() {}
 
 /*
 布局：让每个 drawXxx 函数都接收一个起始 y 坐标，绘制完后返回“下一个可用的 y 坐标”。
@@ -24,7 +47,7 @@ PoolView::~PoolView() {
 
     第一栏 waitingTaskQueue区域：
     - 圆角矩形
-    - 颜色: 白底黑字
+    - 颜色: 淡蓝底，深蓝边
     - 按照队列的实际情况用箭头连接
     - 任务ID: 显示在圆角矩形上
 
@@ -62,130 +85,97 @@ void PoolView::visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
 
 }
 
+
 int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY) {
+    const int w = 40, h = 40, spacing = 10, rowSpacing = 10, topSpacing = 0;
+    auto scenePtr = scene();
 
-    const int rectWidth = 40;
-    const int rectHeight = 40;
-    const int spacing = 15;
-
-    
-    int maxPerRow = (viewport()->width() + spacing) / (rectWidth + spacing);
-    if (maxPerRow < 1) maxPerRow = 1;
-    int leftMargin = (viewport()->width() - maxPerRow * rectWidth - (maxPerRow - 1) * spacing) / 2;
-
-    int shownIndex = 0;
-    for (const auto& info : threadInfos) {
-        if (info.state == -1) continue;
-
-        int row = shownIndex / maxPerRow;
-        int col = shownIndex % maxPerRow;
-        int x = col * (rectWidth + spacing) + leftMargin;
-        int y = baseY + row * (rectHeight + spacing);
-
-        QColor color = (info.state == 0) ? Qt::green : Qt::red;
-
-        scene()->addRect(
-            x, y, rectWidth, rectHeight,
-            QPen(Qt::white, 2), QBrush(color)
-            );
-        // 忙碌线程：线程ID + # + 任务ID
-        // 空闲线程：线程ID
-        QString label = QString("T%1").arg(info.threadId);
-        if (info.state == 1 && info.curTaskId != -1) {
-            label += QString(" #%1").arg(info.curTaskId);
+    drawGrid(scenePtr, threadInfos.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
+        [&](int x, int y, int /*col*/, int idx) {
+            const auto& info = threadInfos[idx];
+            if (info.state == -1) return;
+            QColor color = (info.state == 0) ? Qt::green : Qt::red;
+            scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2), QBrush(color));
+            QString label = QString("T%1").arg(info.threadId);
+            if (info.state == 1 && info.curTaskId != -1)
+                label += QString(" #%1").arg(info.curTaskId);
+            auto* text = scenePtr->addSimpleText(label);
+            text->setBrush(Qt::black);
+            QRectF r = text->boundingRect();
+            text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
         }
-
-        QGraphicsSimpleTextItem* text = scene()->addSimpleText(label);
-        text->setBrush(Qt::black);
-        QRectF textRect = text->boundingRect();
-        text->setPos(
-            x + (rectWidth - textRect.width()) / 2,
-            y + (rectHeight - textRect.height()) / 2
-            );
-
-        ++shownIndex;
-    }
-
-
-    int totalRows = (shownIndex + maxPerRow - 1) / maxPerRow;
-    int sceneHeight = totalRows * (rectHeight + spacing);
-    // 后续放到visualizeAll中统一设置
-    // scene()->setSceneRect(0, 0, viewWidth, baseY + sceneHeight);
-
-    return baseY + sceneHeight;
+    );
+    int viewWidth = scenePtr->views().isEmpty() ? 800 : scenePtr->views().first()->viewport()->width();
+    int maxPerRow = (viewWidth + spacing) / (w + spacing);
+    if (maxPerRow < 1) maxPerRow = 1;
+    int rowCount = (threadInfos.size() + maxPerRow - 1) / maxPerRow;
+    return baseY + rowCount * (h + rowSpacing) + topSpacing;
 }
-
 
 int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int baseY) {
-    const int nodeWidth = 30;
-    const int nodeHeight = 30;
-    const int spacing = 15;
-    const int rowSpacing = 5;
-    const int topSpacing = 5;
-    const int radius = 10;
+    const int w = 30, h = 30, spacing = 15, rowSpacing = 5, topSpacing = 5, radius = 10;
+    auto scenePtr = scene();
 
+    drawGrid(scenePtr, waitingTasks.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
+        [&](int x, int y, int col, int idx) {
+            QPainterPath path;
+            path.addRoundedRect(x, y, w, h, radius, radius);
+            scenePtr->addPath(path, QPen(QColor(100, 150, 220), 2), QBrush(QColor(200, 220, 255)));
+            auto* text = scenePtr->addSimpleText(QString::number(waitingTasks[idx].taskId));
+            text->setBrush(Qt::black);
+            QRectF r = text->boundingRect();
+            text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
 
-    int maxPerRow = (viewport()->width() + spacing) / (nodeWidth + spacing);
+            // 只在同一行画连线和箭头
+            if (col > 0) {
+                int prevX = x - (w + spacing);
+                int prevY = y;
+                QPointF prevCenterRight(prevX + w, prevY + h / 2);
+                QPointF curCenterLeft(x, y + h / 2);
+                scenePtr->addLine(QLineF(prevCenterRight, curCenterLeft), QPen(Qt::gray, 2));
+                // 箭头
+                int arrowSize = 5;
+                QPointF dir = curCenterLeft - prevCenterRight;
+                double len = std::hypot(dir.x(), dir.y());
+                if (len > 0) {
+                    dir /= len;
+                    QPointF ortho(-dir.y(), dir.x());
+                    QPolygonF arrowHead;
+                    arrowHead << curCenterLeft
+                              << (curCenterLeft - dir * arrowSize + ortho * (arrowSize / 2))
+                              << (curCenterLeft - dir * arrowSize - ortho * (arrowSize / 2));
+                    scenePtr->addPolygon(arrowHead, QPen(Qt::gray), QBrush(Qt::gray));
+                }
+            }
+        }
+    );
+    int viewWidth = scenePtr->views().isEmpty() ? 800 : scenePtr->views().first()->viewport()->width();
+    int maxPerRow = (viewWidth + spacing) / (w + spacing);
     if (maxPerRow < 1) maxPerRow = 1;
-    int leftMargin = (viewport()->width() - maxPerRow * nodeWidth - (maxPerRow - 1) * spacing) / 2;
-
-
-
-    // 箭头头部内联
-    auto drawArrowHead = [&](const QPointF& from, const QPointF& to) {
-        int arrowSize = 5;
-        QPointF dir = to - from;
-        double len = std::hypot(dir.x(), dir.y());
-        if (len > 0) {
-            dir /= len;
-            QPointF ortho(-dir.y(), dir.x());
-            QPolygonF arrowHead;
-            arrowHead << to
-                      << (to - dir * arrowSize + ortho * (arrowSize / 2))
-                      << (to - dir * arrowSize - ortho * (arrowSize / 2));
-            scene()->addPolygon(arrowHead, QPen(Qt::gray), QBrush(Qt::gray));
-        }
-    };
-
     int rowCount = (waitingTasks.size() + maxPerRow - 1) / maxPerRow;
-    for (int i = 0; i < waitingTasks.size(); ++i) {
-        int row = i / maxPerRow;
-        int col = i % maxPerRow;
-        int x = leftMargin + col * (nodeWidth + spacing);
-        int y = baseY + topSpacing + row * (nodeHeight + rowSpacing);
-
-        // 画节点
-        QPainterPath path;
-        path.addRoundedRect(x, y, nodeWidth, nodeHeight, radius, radius);
-        scene()->addPath(path, QPen(Qt::gray, 2), QBrush(Qt::white));
-
-        // 画任务ID
-        QGraphicsSimpleTextItem* text = scene()->addSimpleText(QString::number(waitingTasks[i].taskId));
-        text->setBrush(Qt::black);
-        QRectF textRect = text->boundingRect();
-        text->setPos(
-            x + (nodeWidth - textRect.width()) / 2,
-            y + (nodeHeight - textRect.height()) / 2
-        );
-
-        // 只在同一行画连线和箭头
-        if (col > 0) {
-            int prevX = leftMargin + (col - 1) * (nodeWidth + spacing);
-            int prevY = y;
-            QPointF prevCenterRight(prevX + nodeWidth, prevY + nodeHeight / 2);
-            QPointF curCenterLeft(x, y + nodeHeight / 2);
-            scene()->addLine(QLineF(prevCenterRight, curCenterLeft), QPen(Qt::gray, 2));
-            drawArrowHead(prevCenterRight, curCenterLeft);
-        }
-    }
-
-    int height = rowCount * (nodeHeight + rowSpacing) + topSpacing;
-    return baseY + height;
+    return baseY + rowCount * (h + rowSpacing) + topSpacing;
 }
-
-
 int PoolView::drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int baseY) {
-    return baseY;
+    const int w = 35, h = 30, spacing = 8, rowSpacing = 8, topSpacing = 5, radius = 10;
+    auto scenePtr = scene();
+
+    drawGrid(scenePtr, finishedTasks.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
+        [&](int x, int y, int /*col*/, int idx) {
+            QPainterPath path;
+            path.addRoundedRect(x, y, w, h, radius, radius);
+            scenePtr->addPath(path, QPen(Qt::gray, 2), QBrush(QColor(220, 220, 220)));
+            QString label = QString("%1 T:%2").arg(finishedTasks[idx].taskId).arg(finishedTasks[idx].curThreadId);
+            auto* text = scenePtr->addSimpleText(label);
+            text->setBrush(Qt::black);
+            QRectF r = text->boundingRect();
+            text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
+        }
+    );
+    int viewWidth = scenePtr->views().isEmpty() ? 800 : scenePtr->views().first()->viewport()->width();
+    int maxPerRow = (viewWidth + spacing) / (w + spacing);
+    if (maxPerRow < 1) maxPerRow = 1;
+    int rowCount = (finishedTasks.size() + maxPerRow - 1) / maxPerRow;
+    return baseY + rowCount * (h + rowSpacing) + topSpacing;
 }
 /*
     窗口大小变化时：

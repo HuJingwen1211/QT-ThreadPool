@@ -50,13 +50,10 @@ public:
 signals:
     // 线程状态变化、任务完成、日志输出（方便UI联动）
     void threadStateChanged(int threadId); 
-    void taskCompleted(int taskId);
-    void taskRemoved();
-    void logMessage(const QString& message);
+    // 任务列表变化
     void taskListChanged();
-
-private slots:
-    void onTaskAdded();
+    // 日志输出
+    void logMessage(const QString& message);
 
 private:
     void threadExit(int threadId);
@@ -124,7 +121,7 @@ private:
     int m_aliveNum;
     int m_exitNum;
 
-    int m_finishedTasks = 0;    // 已完成任务个数, 用于统计栏显示
+    QList<TaskVisualInfo> m_finishedTasks;
     bool m_shutdown = false;
 };
 
