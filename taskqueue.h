@@ -16,11 +16,13 @@ using callback = void(*)(void*);
 
 struct Task
 {
-    Task() : id(0), function(nullptr), arg(nullptr) {}
-    Task(int tid, callback f, void* a) : id(tid), function(f), arg(a) {}
+    Task() : id(0), function(nullptr), arg(nullptr), totalTimeMs(0) {}
+    Task(int tid, callback f, void* a, int tt) : id(tid), function(f), arg(a), totalTimeMs(tt) {}
     int id;
     callback function;
     void* arg;
+    int totalTimeMs;    // 总耗时
+    // 这里不需要加state字段，因为taskQueue里的task状态一定是waiting
 };
 
 // 任务队列
@@ -32,8 +34,8 @@ public:
     ~TaskQueue();
 
     // 添加任务
-    void addTask(Task& task);
-    void addTask(int id, callback func, void* arg);
+    void addTask(const Task& task);
+    void addTask(int id, callback func, void* arg, int totalTimeMs);
 
     // 取出一个任务
     Task takeTask();

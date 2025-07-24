@@ -73,6 +73,8 @@ void MainWindow::on_stopButton_clicked()
 
     // 重启线程池后任务ID归零
     m_totalTasks = 0;
+    // 清空map
+    m_taskIdToTotalTimeMs.clear();
 }
 
 
@@ -84,19 +86,19 @@ void MainWindow::on_addTaskButton_clicked()
     }
     // 生成任务参数
     int taskId = ++m_totalTasks;
-    int* arg = new int(taskId);
+    int totalTimeMs = 5000 + (taskId % 3) * 500;
 
-    // 任务函数
-    auto taskFunc = [](void* arg) {
-        int id = *(int*)arg;
-        qDebug() << "[任务]" << id << "开始";
-        QThread::msleep(5000 + (id % 3) * 500); // 模拟任务耗时
-        qDebug() << "[任务]" << id << "完成";
-        // delete arg; // 释放参数内存 这里千万不能写 不然就重复释放了
-    };
+    // 维护map
+    m_taskIdToTotalTimeMs[taskId] = totalTimeMs;
 
     // 添加到线程池
-    m_pool->addTask(taskId, taskFunc, arg);
+    Task task;
+    task.id = taskId;
+    task.function = nullptr;
+    task.arg = nullptr;
+    task.totalTimeMs = totalTimeMs;
+
+    m_pool->addTask(task);
     // 调用addTask后，会自动更新任务列表,因为ThreadPool::addTask 内部会 emit taskListChanged()
 }
 
@@ -136,6 +138,9 @@ void MainWindow::on_maxThreadSpinBox_valueChanged(int arg1)
 void MainWindow::refreshAllUI() {
     if (!m_pool) return;
     
+    // 0. 更新map, 用于绘制进度条
+    ui->poolGraphicsView->setTaskIdToTotalTimeMs(m_taskIdToTotalTimeMs);
+
     // 1. 刷新任务列表
     // 1.1. waitingTaskList
     ui->waitingTaskList->clear();

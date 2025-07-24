@@ -26,7 +26,7 @@ public:
     /// 任务相关/////////
     // 添加任务
     void addTask(Task task);
-    void addTask(int id, callback func, void* arg);
+    void addTask(int id, callback func, void* arg, int totalTimeMs);
     // 获取任务队列中等待任务个数
     int getWaitingTaskNumber() const;
     // 获取任务队列中正在执行任务个数
@@ -87,12 +87,16 @@ private:
         // 新增curTaskId字段：线程忙碌时正在处理的task的id
         int curTaskId() const { return m_curTaskId; }
         void setCurTaskId(int curTaskId) { m_curTaskId = curTaskId; }
+        // 新增curTimeMs字段：线程忙碌时正在处理的task的已耗时
+        int curTimeMs() const { return m_curTimeMs; }
+        void setCurTimeMs(int curTimeMs) { m_curTimeMs = curTimeMs; }
 
     private:
         ThreadPool* m_pool;
         int m_id;
         int m_state = 0; // 0=空闲, 1=忙碌, -1=退出
         int m_curTaskId = -1;
+        int m_curTimeMs = 0;
     };
 
     // 管理者线程类，继承QThread，重写run方法

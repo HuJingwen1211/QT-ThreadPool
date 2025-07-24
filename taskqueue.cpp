@@ -12,15 +12,15 @@ TaskQueue::TaskQueue() {}
 
 TaskQueue::~TaskQueue() {}
 
-void TaskQueue::addTask(Task& task) {
+void TaskQueue::addTask(const Task& task) {
     QMutexLocker locker(&m_mutex);   // 自动加锁
     m_queue.enqueue(task);
 }
 
 
-void TaskQueue::addTask(int id, callback func, void* arg) {
+void TaskQueue::addTask(int id, callback func, void* arg, int totalTimeMs) {
     QMutexLocker locker(&m_mutex);
-    Task task(id, func, arg);
+    Task task(id, func, arg, totalTimeMs);
     m_queue.enqueue(task);
 }
 

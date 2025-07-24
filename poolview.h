@@ -51,6 +51,8 @@ public:
 
 
     void clear();
+    // 设置任务ID到总耗时的映射, 用于绘制进度条 
+    void setTaskIdToTotalTimeMs(const QMap<int, int>& taskIdToTotalTimeMs) {m_taskIdToTotalTimeMs = taskIdToTotalTimeMs;}
 private:
     // 重写resizeEvent，在窗口大小变化时，根据快照重新绘制线程和任务,使每行显示的矩形数量自适应。
     void resizeEvent(QResizeEvent* event) override;
@@ -66,7 +68,7 @@ private:
     // 任务池快照
     QList<TaskVisualInfo> m_lastWaitingTasks;
     QList<TaskVisualInfo> m_lastFinishedTasks;
-    
+    QMap<int, int> m_taskIdToTotalTimeMs;
     
 };
 

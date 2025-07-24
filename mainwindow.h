@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QMessageBox>
+#include <QMap>
 #include "threadpool.h"
 #include "poolview.h"
 
@@ -48,5 +49,6 @@ private:
     // ui中，把poolGraphicsView提升为PoolView后,不再需要PoolView* m_poolView这个成员变量
 
     int m_totalTasks = 0;
+    QMap<int, int> m_taskIdToTotalTimeMs;  // 任务ID到总耗时的映射
 };
 #endif // MAINWINDOW_H

@@ -44,25 +44,6 @@ PoolView::~PoolView() {}
 /*
 布局：让每个 drawXxx 函数都接收一个起始 y 坐标，绘制完后返回“下一个可用的 y 坐标”。
 这样每一栏都能自适应高度，互不重叠。
-
-    第一栏 waitingTaskQueue区域：
-    - 圆角矩形
-    - 颜色: 淡蓝底，深蓝边
-    - 按照队列的实际情况用箭头连接
-    - 任务ID: 显示在圆角矩形上
-
-    第二栏 poolView区域：
-    - 线程矩形从左到右排满一行，自动换行，从上到下，依次排列
-    - 线程矩形外观:
-        1. 矩形
-        2. 颜色（线程状态）: 0:空闲=绿色, 1:忙碌=红色, -1:退出=隐藏
-        3. 线程ID: 显示在矩形上
-        4. 线程正在执行的任务ID: 显示在矩形上
-
-    第三栏 finishedTaskList区域：
-    - 圆角矩形
-    - 颜色: 灰底黑字
-    - 任务ID: 显示在圆角矩形上
  */
 
 
@@ -85,33 +66,13 @@ void PoolView::visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
 
 }
 
-
-int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY) {
-    const int w = 40, h = 40, spacing = 10, rowSpacing = 10, topSpacing = 0;
-    auto scenePtr = scene();
-
-    drawGrid(scenePtr, threadInfos.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
-        [&](int x, int y, int /*col*/, int idx) {
-            const auto& info = threadInfos[idx];
-            if (info.state == -1) return;
-            QColor color = (info.state == 0) ? Qt::green : Qt::red;
-            scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2), QBrush(color));
-            QString label = QString("T%1").arg(info.threadId);
-            if (info.state == 1 && info.curTaskId != -1)
-                label += QString(" #%1").arg(info.curTaskId);
-            auto* text = scenePtr->addSimpleText(label);
-            text->setBrush(Qt::black);
-            QRectF r = text->boundingRect();
-            text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
-        }
-    );
-    int viewWidth = scenePtr->views().isEmpty() ? 800 : scenePtr->views().first()->viewport()->width();
-    int maxPerRow = (viewWidth + spacing) / (w + spacing);
-    if (maxPerRow < 1) maxPerRow = 1;
-    int rowCount = (threadInfos.size() + maxPerRow - 1) / maxPerRow;
-    return baseY + rowCount * (h + rowSpacing) + topSpacing;
-}
-
+/*
+第一栏 waitingTaskQueue区域：
+- 圆角矩形
+- 颜色: 淡蓝底，深蓝边
+- 按照队列的实际情况用箭头连接
+- 任务ID: 显示在圆角矩形上
+ */
 int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int baseY) {
     const int w = 30, h = 30, spacing = 15, rowSpacing = 5, topSpacing = 5, radius = 10;
     auto scenePtr = scene();
@@ -155,6 +116,80 @@ int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int ba
     int rowCount = (waitingTasks.size() + maxPerRow - 1) / maxPerRow;
     return baseY + rowCount * (h + rowSpacing) + topSpacing;
 }
+/*
+第二栏 poolView区域：
+- 线程矩形从左到右排满一行，自动换行，从上到下，依次排列
+- 线程矩形外观:
+    1. 矩形
+    2. 颜色（线程状态）: 0:空闲=绿色, 1:忙碌=红色, -1:退出=隐藏
+    3. 线程ID: 显示在矩形上
+    4. 线程正在执行的任务ID: 显示在矩形上
+    5. 忙碌线程：矩形左侧“已完成部分”为绿色，右侧“未完成部分”为红色，进度条就是整个矩形本身。
+    6. 空闲线程：矩形全绿。
+
+*/
+int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY) {
+    const int w = 40, h = 40, spacing = 10, rowSpacing = 10, topSpacing = 0;
+    auto scenePtr = scene();
+
+    drawGrid(scenePtr, threadInfos.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
+        [&](int x, int y, int /*col*/, int idx) {
+            const auto& info = threadInfos[idx];
+            if (info.state == -1) return;
+
+            QColor idleColor = Qt::green;
+            QColor busyDoneColor = Qt::green;
+            QColor busyTodoColor = Qt::red;
+
+            if (info.state == 0) {
+                // 空闲线程，全部绿色
+                scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2), QBrush(idleColor));
+            } else if (info.state == 1 && info.curTaskId != -1) {
+                // 用map获取totalTimeMs, 用于绘制进度条
+                int totalTimeMs = m_taskIdToTotalTimeMs.value(info.curTaskId);
+                // 忙碌线程，左侧绿色（已完成），右侧红色（未完成）
+                double percent = qBound(0.0, double(info.curTimeMs) / totalTimeMs, 1.0);
+                int doneWidth = int(w * percent);
+                int todoWidth = w - doneWidth;
+                // 先画已完成部分（绿色）
+                if (doneWidth > 0) {
+                    scenePtr->addRect(x, y, doneWidth, h, QPen(Qt::NoPen), QBrush(busyDoneColor));
+                }
+                // 再画未完成部分（红色）
+                if (todoWidth > 0) {
+                    scenePtr->addRect(x + doneWidth, y, todoWidth, h, QPen(Qt::NoPen), QBrush(busyTodoColor));
+                }
+                // 画边框
+                scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2));
+            } else {
+                // 其他情况（如异常），用灰色
+                scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2), QBrush(Qt::gray));
+            }
+
+            // 画文字
+            QString label = QString("T%1").arg(info.threadId);
+            if (info.state == 1 && info.curTaskId != -1)
+                label += QString(" #%1").arg(info.curTaskId);
+            auto* text = scenePtr->addSimpleText(label);
+            text->setBrush(Qt::black);
+            QRectF r = text->boundingRect();
+            text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
+        }
+    );
+    int viewWidth = scenePtr->views().isEmpty() ? 800 : scenePtr->views().first()->viewport()->width();
+    int maxPerRow = (viewWidth + spacing) / (w + spacing);
+    if (maxPerRow < 1) maxPerRow = 1;
+    int rowCount = (threadInfos.size() + maxPerRow - 1) / maxPerRow;
+    return baseY + rowCount * (h + rowSpacing) + topSpacing;
+}
+
+
+/*    
+第三栏 finishedTaskList区域：
+- 圆角矩形
+- 颜色: 灰底黑字
+- 任务ID: 显示在圆角矩形上
+*/
 int PoolView::drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int baseY) {
     const int w = 35, h = 30, spacing = 8, rowSpacing = 8, topSpacing = 5, radius = 10;
     auto scenePtr = scene();

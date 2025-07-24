@@ -64,15 +64,31 @@ void ThreadPool::WorkerThread::run()
         // 从任务队列取出任务
         Task task = m_pool->m_taskQ->takeTask();
         int curTaskId = task.id;
+        int totalTimeMs = task.totalTimeMs;
+
         m_pool->m_busyNum++;
         setState(1);    // 设置忙碌状态
         setCurTaskId(curTaskId);
+        setCurTimeMs(0);
+
         emit m_pool->threadStateChanged(m_id);    // 发送信号
         emit m_pool->taskListChanged(); // 任务列表变化
         m_pool->m_lock.unlock();
 
         // 执行任务
-        qDebug() << "执行任务，thread" << m_id << "start working...";
+        // 分段sleep，定期更新curTimeMs
+        int elapsedTimeMs = 0;  // 已耗时
+        int stepTimeMs = 100;   // 刷新频率，每100ms刷新一次
+        while (elapsedTimeMs < totalTimeMs) {
+            QThread::msleep(stepTimeMs);
+            elapsedTimeMs += stepTimeMs;
+            if (elapsedTimeMs > totalTimeMs) elapsedTimeMs = totalTimeMs;  // 防止溢出
+            setCurTimeMs(elapsedTimeMs);
+            emit m_pool->threadStateChanged(m_id);  // 通知UI更新
+        }
+        setCurTimeMs(totalTimeMs);  // 任务结束时，已耗时=总耗时
+        emit m_pool->threadStateChanged(m_id);  // 通知UI更新
+
         if (task.function) {
             task.function(task.arg);
             if (task.arg) {
@@ -81,7 +97,6 @@ void ThreadPool::WorkerThread::run()
             }
         }
         // 任务处理结束
-        qDebug() << "任务处理结束，thread" << m_id << "end working...";
         m_pool->m_lock.lock();
         m_pool->m_busyNum--;
         // 添加到已完成任务列表
@@ -227,10 +242,10 @@ void ThreadPool::addTask(Task task)
     emit taskListChanged();
 }
 
-void ThreadPool::addTask(int id, callback func, void* arg)
+void ThreadPool::addTask(int id, callback func, void* arg, int totalTimeMs)
 {
     if (m_shutdown) return;
-    m_taskQ->addTask(id, func, arg);
+    m_taskQ->addTask(id, func, arg, totalTimeMs);
     // 唤醒一个等待的线程
     m_notEmpty.wakeOne();
     emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
@@ -259,6 +274,28 @@ int ThreadPool::getFinishedTaskNumber() const
     QMutexLocker locker(&m_lock);
     return m_finishedTasks.size();
 }
+
+QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
+{
+    QList<TaskVisualInfo> waitingTaskInfos;
+    QMutexLocker locker(&m_lock);
+    for (auto task : m_taskQ->getTasks())
+    {
+        TaskVisualInfo info;
+        info.taskId = task.id;
+        info.state = 0; // waiting
+        info.curThreadId = -1;
+        info.totalTimeMs = task.totalTimeMs;
+        waitingTaskInfos.append(info);
+    }
+    return waitingTaskInfos;
+}
+QList<TaskVisualInfo> ThreadPool::getFinishedTaskVisualInfo() const
+{
+    QMutexLocker locker(&m_lock);
+    return m_finishedTasks;
+}
+
 
 
 /// 线程相关/////////
@@ -319,28 +356,11 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
         info.threadId = thread->id();
         info.state = thread->state();
         info.curTaskId = thread->curTaskId();
+        info.curTimeMs = thread->curTimeMs();
         // 更多字段待补充
         threadInfos.append(info);   
     }
     return threadInfos;
 }
 
-QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
-{
-    QList<TaskVisualInfo> waitingTaskInfos;
-    QMutexLocker locker(&m_lock);
-    for (auto task : m_taskQ->getTasks())
-    {
-        TaskVisualInfo info;
-        info.taskId = task.id;
-        info.state = 0; // waiting
-        info.curThreadId = -1;
-        waitingTaskInfos.append(info);
-    }
-    return waitingTaskInfos;
-}
-QList<TaskVisualInfo> ThreadPool::getFinishedTaskVisualInfo() const
-{
-    QMutexLocker locker(&m_lock);
-    return m_finishedTasks;
-}
+
