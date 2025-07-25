@@ -69,7 +69,7 @@ void PoolView::visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
 /*
 第一栏 waitingTaskQueue区域：
 - 圆角矩形
-- 颜色: 淡蓝底，深蓝边
+- 颜色: 红色边，淡红底
 - 按照队列的实际情况用箭头连接
 - 任务ID: 显示在圆角矩形上
  */
@@ -81,7 +81,8 @@ int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int ba
         [&](int x, int y, int col, int idx) {
             QPainterPath path;
             path.addRoundedRect(x, y, w, h, radius, radius);
-            scenePtr->addPath(path, QPen(QColor(100, 150, 220), 2), QBrush(QColor(200, 220, 255)));
+            // 画圆角矩形，红色边，淡红底
+            scenePtr->addPath(path, QPen(QColor(220, 60, 60), 2), QBrush(QColor(255, 220, 220)));
             auto* text = scenePtr->addSimpleText(QString::number(waitingTasks[idx].taskId));
             text->setBrush(Qt::black);
             QRectF r = text->boundingRect();
@@ -187,7 +188,7 @@ int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY)
 /*    
 第三栏 finishedTaskList区域：
 - 圆角矩形
-- 颜色: 灰底黑字
+- 颜色: 绿色边，淡绿底
 - 任务ID: 显示在圆角矩形上
 */
 int PoolView::drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int baseY) {
@@ -198,7 +199,8 @@ int PoolView::drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int 
         [&](int x, int y, int /*col*/, int idx) {
             QPainterPath path;
             path.addRoundedRect(x, y, w, h, radius, radius);
-            scenePtr->addPath(path, QPen(Qt::gray, 2), QBrush(QColor(220, 220, 220)));
+            // 画圆角矩形，绿色边，淡绿底
+            scenePtr->addPath(path, QPen(QColor(60, 180, 60), 2), QBrush(QColor(220, 255, 220)));
             QString label = QString("%1 T:%2").arg(finishedTasks[idx].taskId).arg(finishedTasks[idx].curThreadId);
             auto* text = scenePtr->addSimpleText(label);
             text->setBrush(Qt::black);

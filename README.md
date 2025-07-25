@@ -21,6 +21,27 @@
 
 ---
 
+## 设计亮点
+
+- **字段分离，职责单一**  
+  - `totalTimeMs` 只在 `Task`/`TaskVisualInfo` 结构体中，表示任务的总耗时，是任务的固有属性。
+  - `curTimeMs` 只在 `WorkerThread`/`ThreadVisualInfo` 结构体中，表示线程当前正在执行任务的已耗时，是线程的动态状态。
+  - 这样分离让数据结构更清晰，避免冗余和同步问题，便于维护和扩展。
+
+- **进度条动画与任务同步**  
+  - WorkerThread 采用分段 sleep 并定期更新 curTimeMs，UI 进度条动画与任务实际完成严格同步。
+  - 任务函数不再 sleep，避免进度条提前走完但任务未完成的现象。
+
+- **UI与业务彻底解耦**  
+  - UI 只依赖快照数据（`ThreadVisualInfo`、`TaskVisualInfo`），不直接依赖 ThreadPool 对象。
+  - 进度条绘制时通过 curTaskId 查找 totalTimeMs，结构职责分明。
+
+- **高效查找与可扩展性**  
+  - MainWindow 维护 `QMap<int, int>` 作为 taskId 到 totalTimeMs 的映射，PoolView 通过 map 实时查找任务总耗时，查找效率高。
+  - 便于后续调度算法扩展和维护。
+
+---
+
 ## 项目结构
 
 ```
@@ -219,6 +240,10 @@ stateDiagram-v2
 - **UI刷新统一入口**：所有UI刷新逻辑集中在 `refreshAllUI()`，只依赖线程池快照数据，避免多处维护和数据不同步。
 - **线程池快照接口**：UI 通过 `getThreadVisualInfo()`、`getWaitingTaskVisualInfo()`、`getFinishedTaskVisualInfo()` 获取线程、任务、已完成任务的快照，UI与业务彻底解耦。
 - **PoolView极简复用**：所有可视化区域统一用 drawGrid 网格函数，布局、间距、居中、换行等逻辑高度复用，每个区域只需传入节点参数和lambda，专注自身内容。
+- **字段分离**：`totalTimeMs` 只在任务相关结构体，`curTimeMs` 只在线程相关结构体，避免冗余和同步问题。
+- **进度条动画**：WorkerThread 分段 sleep 并定期更新 curTimeMs，UI 进度条动画与任务实际完成严格同步。
+- **UI查找总耗时**：PoolView 画线程进度条时，用 curTaskId 查找 MainWindow 维护的 QMap<int, int>，获取 totalTimeMs。
+- **任务函数不再 sleep**：所有耗时模拟和进度条动画都由 WorkerThread 控制，任务函数只做业务逻辑或为空。
 
 ---
 

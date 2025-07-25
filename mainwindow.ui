@@ -56,6 +56,42 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="label_8">
+         <property name="text">
+          <string>调度算法:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="scheduleComboBox">
+         <item>
+          <property name="text">
+           <string>先进先出(FIFO)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>后进先出(LIFO)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>最短任务优先(SJF)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>最长任务优先(LJF)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>优先级优先(PRIO)</string>
+          </property>
+         </item>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="startButton">
          <property name="text">
           <string>开始</string>
