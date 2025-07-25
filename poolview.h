@@ -4,6 +4,7 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include "visualinfo.h"
+#include "scheduler.h"
 
 class PoolView : public QGraphicsView
 {
@@ -53,6 +54,8 @@ public:
     void clear();
     // 设置任务ID到总耗时的映射, 用于绘制进度条 
     void setTaskIdToTotalTimeMs(const QMap<int, int>& taskIdToTotalTimeMs) {m_taskIdToTotalTimeMs = taskIdToTotalTimeMs;}
+    // 设置当前调度策略,用于switch绘制任务的label
+    void setCurrentPolicy(SchedulePolicy policy) {m_currentPolicy = policy;}
 private:
     // 重写resizeEvent，在窗口大小变化时，根据快照重新绘制线程和任务,使每行显示的矩形数量自适应。
     void resizeEvent(QResizeEvent* event) override;
@@ -69,6 +72,7 @@ private:
     QList<TaskVisualInfo> m_lastWaitingTasks;
     QList<TaskVisualInfo> m_lastFinishedTasks;
     QMap<int, int> m_taskIdToTotalTimeMs;
+    SchedulePolicy m_currentPolicy; // 当前调度策略,用于switch绘制任务的label
     
 };
 

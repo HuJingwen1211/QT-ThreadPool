@@ -41,7 +41,7 @@ private slots:
 
     void on_maxThreadSpinBox_valueChanged(int arg1);
 
-
+    void on_scheduleComboBox_currentIndexChanged(int index);
 
 private:
     Ui::MainWindow *ui;

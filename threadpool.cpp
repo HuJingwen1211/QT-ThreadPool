@@ -238,17 +238,28 @@ void ThreadPool::addTask(Task task)
     m_taskQ->addTask(task);
     // 唤醒一个等待的线程
     m_notEmpty.wakeOne();
-    emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(task.id));
+    // emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(task.id));
+    emit logMessage(
+        QString("[线程池]添加任务 %1 到队列 (耗时:%2s, 优先级:%3)")
+            .arg(task.id)
+            .arg(task.totalTimeMs / 1000.0, 0, 'f', 1)
+            .arg(task.priority)
+    );
     emit taskListChanged();
 }
 
-void ThreadPool::addTask(int id, callback func, void* arg, int totalTimeMs)
+void ThreadPool::addTask(int id, callback func, void* arg, int totalTimeMs, int priority)
 {
     if (m_shutdown) return;
-    m_taskQ->addTask(id, func, arg, totalTimeMs);
+    m_taskQ->addTask(id, func, arg, totalTimeMs, priority);
     // 唤醒一个等待的线程
     m_notEmpty.wakeOne();
-    emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(id));
+    emit logMessage(
+        QString("[线程池]添加任务 %1 到队列 (耗时:%2s, 优先级:%3)")
+            .arg(id)
+            .arg(totalTimeMs / 1000.0, 0, 'f', 1)
+            .arg(priority)
+    );
     emit taskListChanged();
 }
 
@@ -286,6 +297,7 @@ QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
         info.state = 0; // waiting
         info.curThreadId = -1;
         info.totalTimeMs = task.totalTimeMs;
+        info.priority = task.priority;
         waitingTaskInfos.append(info);
     }
     return waitingTaskInfos;
@@ -364,3 +376,35 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
 }
 
 
+void ThreadPool::setSchedulePolicy(SchedulePolicy policy) {
+    TaskScheduler* scheduler = nullptr;
+    QString policyName;
+    switch (policy) {
+        case SchedulePolicy::FIFO:
+            scheduler = new FIFOScheduler();
+            policyName = "FIFO";
+            break;
+        case SchedulePolicy::LIFO:
+            scheduler = new LIFOScheduler();
+            policyName = "LIFO";
+            break;
+        case SchedulePolicy::SJF:
+            scheduler = new SJFScheduler();
+            policyName = "SJF";
+            break;
+        case SchedulePolicy::LJF:
+            scheduler = new LJFScheduler();
+            policyName = "LJF";
+            break;
+        case SchedulePolicy::PRIO:
+            scheduler = new PRIOScheduler();
+            policyName = "PRIO";
+            break;
+        default:
+            scheduler = new FIFOScheduler();
+            policyName = "FIFO";
+            break;
+    }
+    m_taskQ->setScheduler(scheduler);
+    emit logMessage(QString("[线程池]当前调度策略: %1").arg(policyName));
+}

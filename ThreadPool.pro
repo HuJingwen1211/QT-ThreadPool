@@ -12,12 +12,14 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     poolview.cpp \
+    scheduler.cpp \
     taskqueue.cpp \
     threadpool.cpp
 
 HEADERS += \
     mainwindow.h \
     poolview.h \
+    scheduler.h \
     taskqueue.h \
     threadpool.h \
     visualinfo.h

@@ -15,7 +15,7 @@ struct TaskVisualInfo {
     int state;  // 任务状态: 0=waiting，1=running，2=finished
     int curThreadId = -1;  // 正在被哪个线程执行
     int totalTimeMs = 0;  // 总耗时
-    
+    int priority = 0;  // 优先级
 };
 
 

@@ -3,7 +3,8 @@
 
 #include <QObject>
 #include <QMutex>
-#include <QQueue>
+#include <QList>
+#include "scheduler.h"
 
 /*
  * 说明：
@@ -17,11 +18,12 @@ using callback = void(*)(void*);
 struct Task
 {
     Task() : id(0), function(nullptr), arg(nullptr), totalTimeMs(0) {}
-    Task(int tid, callback f, void* a, int tt) : id(tid), function(f), arg(a), totalTimeMs(tt) {}
+    Task(int tid, callback f, void* a, int tt, int prio) : id(tid), function(f), arg(a), totalTimeMs(tt), priority(prio) {}
     int id;
     callback function;
     void* arg;
     int totalTimeMs;    // 总耗时
+    int priority;       // 优先级
     // 这里不需要加state字段，因为taskQueue里的task状态一定是waiting
 };
 
@@ -35,7 +37,7 @@ public:
 
     // 添加任务
     void addTask(const Task& task);
-    void addTask(int id, callback func, void* arg, int totalTimeMs);
+    void addTask(int id, callback func, void* arg, int totalTimeMs, int priority);
 
     // 取出一个任务
     Task takeTask();
@@ -52,9 +54,24 @@ public:
     // 清空队列
     void clearQueue();
 
+    // 设置调度策略
+    /*
+    为什么要 delete m_scheduler？
+    每次切换调度策略时，都会 new 一个新的调度器对象（如 new FIFOScheduler()）。
+    如果不释放旧的调度器，内存会一直增长，造成内存泄漏。
+    所以切换前要先 delete 掉旧的，再保存新的。
+    */
+    void setScheduler(TaskScheduler* scheduler) { 
+        QMutexLocker locker(&m_mutex);
+        if (m_scheduler) delete m_scheduler;
+        m_scheduler = scheduler;
+        m_scheduler->sortQueue(m_queue);
+    }
+
 private:
     mutable QMutex m_mutex;        // Qt互斥锁，替代pthread_mutex_t
-    QQueue<Task> m_queue;  // Qt队列，替代std::queue
+    QList<Task> m_queue;
+    TaskScheduler* m_scheduler = nullptr;   // 调度策略
 };
 
 #endif // TASKQUEUE_H

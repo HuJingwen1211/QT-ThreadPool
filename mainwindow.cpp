@@ -1,5 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "scheduler.h"
+#include <QRandomGenerator>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -34,13 +36,15 @@ void MainWindow::on_startButton_clicked()
     connect(m_pool, &ThreadPool::taskListChanged, this, &MainWindow::refreshAllUI);
     connect(m_pool, &ThreadPool::threadStateChanged, this, &MainWindow::refreshAllUI);
 
-
+    // 调度策略选择
+    m_pool->setSchedulePolicy(static_cast<SchedulePolicy>(ui->scheduleComboBox->currentIndex()));
+    ui->poolGraphicsView->setCurrentPolicy(static_cast<SchedulePolicy>(ui->scheduleComboBox->currentIndex()));
     // 更新UI状态
     ui->startButton->setEnabled(false);
     ui->stopButton->setEnabled(true);
     ui->addTaskButton->setEnabled(true);
     ui->clearLogButton->setEnabled(true);
-    
+    // ui->scheduleComboBox->setEnabled(false);
 }
 
 
@@ -59,8 +63,9 @@ void MainWindow::on_stopButton_clicked()
     ui->addTaskButton->setEnabled(false);
 
 
-    // 3. 启用“开始”按钮
+    // 3. 启用“开始”按钮和调度策略选择框
     ui->startButton->setEnabled(true);
+    // ui->scheduleComboBox->setEnabled(true);
 
     // 4. 清空UI显示
     ui->waitingTaskList->clear();
@@ -86,7 +91,8 @@ void MainWindow::on_addTaskButton_clicked()
     }
     // 生成任务参数
     int taskId = ++m_totalTasks;
-    int totalTimeMs = 5000 + (taskId % 3) * 500;
+    int totalTimeMs = QRandomGenerator::global()->bounded(3000, 8001);
+    int priority = QRandomGenerator::global()->bounded(1, 11);
 
     // 维护map
     m_taskIdToTotalTimeMs[taskId] = totalTimeMs;
@@ -97,7 +103,7 @@ void MainWindow::on_addTaskButton_clicked()
     task.function = nullptr;
     task.arg = nullptr;
     task.totalTimeMs = totalTimeMs;
-
+    task.priority = priority;
     m_pool->addTask(task);
     // 调用addTask后，会自动更新任务列表,因为ThreadPool::addTask 内部会 emit taskListChanged()
 }
@@ -145,7 +151,12 @@ void MainWindow::refreshAllUI() {
     // 1.1. waitingTaskList
     ui->waitingTaskList->clear();
     for (const auto& waitingTask : m_pool->getWaitingTaskVisualInfo()) {
-        ui->waitingTaskList->addItem(QString("任务 %1").arg(waitingTask.taskId));
+        ui->waitingTaskList->addItem(
+            QString("任务%1 (%2s,★%3)")
+                .arg(waitingTask.taskId)
+                .arg(waitingTask.totalTimeMs / 1000.0, 0, 'f', 1)
+                .arg(waitingTask.priority)
+        );
     }
 
     // 1.2. runningTaskList
@@ -153,7 +164,7 @@ void MainWindow::refreshAllUI() {
     for (const auto& threadInfo : m_pool->getThreadVisualInfo()) {
         if (threadInfo.state == 1 && threadInfo.curTaskId != -1) { // 1=忙碌
             ui->runningTaskList->addItem(
-                QString("任务 %1 (T:%2)").arg(threadInfo.curTaskId).arg(threadInfo.threadId));
+                QString("任务%1 (T:%2)").arg(threadInfo.curTaskId).arg(threadInfo.threadId));
         }
     }
 
@@ -161,7 +172,7 @@ void MainWindow::refreshAllUI() {
     ui->finishedTaskList->clear();
     for (const auto& finishedTask : m_pool->getFinishedTaskVisualInfo()) {
         ui->finishedTaskList->addItem(
-            QString("任务 %1 (T:%2)").arg(finishedTask.taskId).arg(finishedTask.curThreadId));
+            QString("任务%1 (T:%2)").arg(finishedTask.taskId).arg(finishedTask.curThreadId));
     }
 
     // 2. 刷新线程列表
@@ -175,10 +186,10 @@ void MainWindow::refreshAllUI() {
     for (const auto& threadInfo : m_pool->getThreadVisualInfo()) {
         if (threadInfo.state == 1) {    // 1=忙碌
             ui->workingThreadList->addItem(
-                QString("线程 %1 (#%2)").arg(threadInfo.threadId).arg(threadInfo.curTaskId));
+                QString("线程%1 (#%2)").arg(threadInfo.threadId).arg(threadInfo.curTaskId));
         } else if (threadInfo.state == 0) { // 0=空闲
             ui->idleThreadList->addItem(
-                QString("线程 %1").arg(threadInfo.threadId));
+                QString("线程%1").arg(threadInfo.threadId));
         }
     }
 
@@ -213,3 +224,21 @@ void MainWindow::onLogMessage(const QString& msg)
 {
     ui->logTextBrowser->append(msg);
 }
+
+
+void MainWindow::on_scheduleComboBox_currentIndexChanged(int index)
+{
+    if (!m_pool) return;
+    // 弹窗提示
+    QMessageBox::information(
+        this,
+        "调度策略切换",
+        QString("调度策略已切换为：%1\n等待队列将按新策略重新排序，正在执行的任务不受影响。")
+            .arg(ui->scheduleComboBox->currentText())
+    );
+    m_pool->setSchedulePolicy(static_cast<SchedulePolicy>(index));
+    ui->poolGraphicsView->setCurrentPolicy(static_cast<SchedulePolicy>(index));
+    // 刷新UI
+    refreshAllUI();
+}
+

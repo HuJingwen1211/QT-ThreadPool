@@ -74,7 +74,7 @@ void PoolView::visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
 - 任务ID: 显示在圆角矩形上
  */
 int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int baseY) {
-    const int w = 30, h = 30, spacing = 15, rowSpacing = 5, topSpacing = 5, radius = 10;
+    const int w = 45, h = 30, spacing = 15, rowSpacing = 5, topSpacing = 5, radius = 10;
     auto scenePtr = scene();
 
     drawGrid(scenePtr, waitingTasks.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
@@ -83,7 +83,28 @@ int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int ba
             path.addRoundedRect(x, y, w, h, radius, radius);
             // 画圆角矩形，红色边，淡红底
             scenePtr->addPath(path, QPen(QColor(220, 60, 60), 2), QBrush(QColor(255, 220, 220)));
-            auto* text = scenePtr->addSimpleText(QString::number(waitingTasks[idx].taskId));
+            // auto* text = scenePtr->addSimpleText(QString::number(waitingTasks[idx].taskId));
+            // 显示任务ID和总耗时s
+            int totalTimeMs = waitingTasks[idx].totalTimeMs;
+            double seconds = totalTimeMs / 1000.0;
+            QString label;
+            switch (m_currentPolicy) {
+                case SchedulePolicy::FIFO:
+                case SchedulePolicy::LIFO:
+                    label = QString::number(waitingTasks[idx].taskId);
+                    break;
+                case SchedulePolicy::SJF:
+                case SchedulePolicy::LJF:
+                    label = QString("%1(%2s)").arg(waitingTasks[idx].taskId).arg(seconds, 0, 'f', 1);
+                    break;
+                case SchedulePolicy::PRIO:
+                    label = QString("%1(★%2)").arg(waitingTasks[idx].taskId).arg(waitingTasks[idx].priority);
+                    break;
+                default:
+                    label = QString::number(waitingTasks[idx].taskId);
+            }
+            auto* text = scenePtr->addSimpleText(label);
+
             text->setBrush(Qt::black);
             QRectF r = text->boundingRect();
             text->setPos(x + (w - r.width()) / 2, y + (h - r.height()) / 2);
@@ -192,7 +213,7 @@ int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY)
 - 任务ID: 显示在圆角矩形上
 */
 int PoolView::drawFinishedTasks(const QList<TaskVisualInfo>& finishedTasks, int baseY) {
-    const int w = 35, h = 30, spacing = 8, rowSpacing = 8, topSpacing = 5, radius = 10;
+    const int w = 45, h = 30, spacing = 8, rowSpacing = 8, topSpacing = 5, radius = 10;
     auto scenePtr = scene();
 
     drawGrid(scenePtr, finishedTasks.size(), w, h, spacing, rowSpacing, topSpacing, baseY,

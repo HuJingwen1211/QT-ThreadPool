@@ -8,6 +8,7 @@
 #include <QWaitCondition>
 #include "taskqueue.h"
 #include "visualinfo.h"
+#include "scheduler.h"
 
 /*
  * 说明：
@@ -26,7 +27,7 @@ public:
     /// 任务相关/////////
     // 添加任务
     void addTask(Task task);
-    void addTask(int id, callback func, void* arg, int totalTimeMs);
+    void addTask(int id, callback func, void* arg, int totalTimeMs, int priority);
     // 获取任务队列中等待任务个数
     int getWaitingTaskNumber() const;
     // 获取任务队列中正在执行任务个数
@@ -47,6 +48,8 @@ public:
     QList<TaskVisualInfo> getWaitingTaskVisualInfo() const;
     QList<TaskVisualInfo> getFinishedTaskVisualInfo() const;
 
+    // 设置调度策略
+    void setSchedulePolicy(SchedulePolicy policy);
 signals:
     // 线程状态变化、任务完成、日志输出（方便UI联动）
     void threadStateChanged(int threadId); 
