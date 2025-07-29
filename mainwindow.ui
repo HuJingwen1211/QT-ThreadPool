@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>520</width>
-    <height>579</height>
+    <width>560</width>
+    <height>642</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -89,6 +89,11 @@
            <string>优先级优先(PRIO)</string>
           </property>
          </item>
+         <item>
+          <property name="text">
+           <string>最高响应比优先(HRRN)</string>
+          </property>
+         </item>
         </widget>
        </item>
        <item>
@@ -106,9 +111,12 @@
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="addTaskButton">
+        <widget class="QToolButton" name="addTaskToolButton">
          <property name="text">
           <string>添加任务</string>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
          </property>
         </widget>
        </item>
@@ -127,47 +135,94 @@
       <property name="title">
        <string>统计信息</string>
       </property>
-      <layout class="QGridLayout" name="gridLayout">
-       <item row="1" column="1">
-        <widget class="QLabel" name="runningTaskLabel">
-         <property name="text">
-          <string>正在执行任务:</string>
+      <layout class="QVBoxLayout" name="verticalLayout_6">
+       <item>
+        <widget class="QWidget" name="widget_2" native="true">
+         <layout class="QGridLayout" name="gridLayout">
+          <item row="0" column="2">
+           <widget class="QLabel" name="idleThreadsLabel">
+            <property name="text">
+             <string>空闲线程:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="totalThreadsLabel">
+            <property name="text">
+             <string>总线程:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLabel" name="busyThreadsLabel">
+            <property name="text">
+             <string>忙线程:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="waitingTaskLabel">
+            <property name="text">
+             <string>等待执行任务:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLabel" name="runningTaskLabel">
+            <property name="text">
+             <string>正在执行任务:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLabel" name="finishedTasksLabel">
+            <property name="text">
+             <string>已完成任务:</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="Line" name="line">
+         <property name="orientation">
+          <enum>Qt::Orientation::Horizontal</enum>
          </property>
         </widget>
        </item>
-       <item row="0" column="2">
-        <widget class="QLabel" name="idleThreadsLabel">
-         <property name="text">
-          <string>空闲线程:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="QLabel" name="busyThreadsLabel">
-         <property name="text">
-          <string>忙线程:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="2">
-        <widget class="QLabel" name="finishedTasksLabel">
-         <property name="text">
-          <string>已完成任务:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="0">
-        <widget class="QLabel" name="totalThreadsLabel">
-         <property name="text">
-          <string>总线程:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QLabel" name="waitingTaskLabel">
-         <property name="text">
-          <string>等待执行任务:</string>
-         </property>
+       <item>
+        <widget class="QWidget" name="widget_3" native="true">
+         <layout class="QGridLayout" name="gridLayout_2">
+          <item row="0" column="0">
+           <widget class="QLabel" name="avgWaitTimeLabel">
+            <property name="text">
+             <string>平均等待时间:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLabel" name="throughputLabel">
+            <property name="text">
+             <string>吞吐量:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="avgResponseRatioLabel">
+            <property name="text">
+             <string>平均响应比:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLabel" name="cpuUtilizationLabel">
+            <property name="text">
+             <string>CPU利用率:</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
       </layout>
@@ -405,7 +460,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>520</width>
+     <width>560</width>
      <height>18</height>
     </rect>
    </property>

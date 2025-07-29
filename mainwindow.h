@@ -27,10 +27,11 @@ private slots:
 
     void on_stopButton_clicked();
 
-    void on_addTaskButton_clicked();
+    void on_addTaskToolButton_clicked();
+
+    void on_addTaskToolButton_triggered(QAction *action);
 
     void on_clearLogButton_clicked();
-
     // 日志输出
     void onLogMessage(const QString& msg);
     // 刷新所有UI
@@ -42,6 +43,12 @@ private slots:
     void on_maxThreadSpinBox_valueChanged(int arg1);
 
     void on_scheduleComboBox_currentIndexChanged(int index);
+private:
+    void setAddTaskMenu();
+    void addSingleTask();
+
+
+
 
 private:
     Ui::MainWindow *ui;

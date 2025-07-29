@@ -26,25 +26,17 @@ void TaskQueue::addTask(const Task& task) {
 }
 
 
-void TaskQueue::addTask(int id, callback func, void* arg, int totalTimeMs, int priority) {
-    QMutexLocker locker(&m_mutex);
-    Task task(id, func, arg, totalTimeMs, priority);
-    if (m_scheduler) {
-        m_scheduler->insertByPolicy(m_queue, task);
-    } else {
-        m_queue.append(task);
-    }
-    // 打印当前队列内容
-    QStringList ids;
-    for (const auto& t : m_queue) ids << QString::number(t.id);
-    qDebug() << "[TaskQueue] 当前队列内容:" << ids.join(" -> ");
-}
-
 Task TaskQueue::takeTask()
 {
     Task t;
     QMutexLocker locker(&m_mutex);
-    if (!m_queue.isEmpty()) t = m_queue.takeFirst();
+    if (!m_queue.isEmpty()) {        
+        // 对于HRRN算法，需要重新排序
+        if (m_scheduler && m_scheduler->needDynamicSort()) {
+            m_scheduler->sortQueue(m_queue);
+        }
+        t = m_queue.takeFirst();
+    }
     return t;
 }
 

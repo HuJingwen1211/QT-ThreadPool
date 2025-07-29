@@ -89,13 +89,14 @@ void ThreadPool::WorkerThread::run()
         setCurTimeMs(totalTimeMs);  // 任务结束时，已耗时=总耗时
         emit m_pool->threadStateChanged(m_id);  // 通知UI更新
 
-        if (task.function) {
-            task.function(task.arg);
-            if (task.arg) {
-                delete task.arg;
-                task.arg = nullptr;
-            }
-        }
+        // 可以注释 因为目前没有用到执行函数
+        // if (task.function) {
+        //     task.function(task.arg);
+        //     if (task.arg) {
+        //         delete task.arg;
+        //         task.arg = nullptr;
+        //     }
+        // }
         // 任务处理结束
         m_pool->m_lock.lock();
         m_pool->m_busyNum--;
@@ -104,6 +105,11 @@ void ThreadPool::WorkerThread::run()
         info.taskId = curTaskId;
         info.state = 2; // finished
         info.curThreadId = m_id;
+        info.totalTimeMs = totalTimeMs;
+        info.priority = task.priority;
+        info.arrivalTimestampMs = task.arrivalTimestampMs;
+        info.finishTimestampMs = QTime::currentTime().msecsSinceStartOfDay();
+
         m_pool->m_finishedTasks.append(info);
 
         setState(0);    // 设置空闲状态
@@ -177,6 +183,8 @@ void ThreadPool::ManagerThread::run()
 ThreadPool::ThreadPool(int minNum, int maxNum)
     : m_minNum(minNum), m_maxNum(maxNum), m_busyNum(0), m_aliveNum(0), m_exitNum(0), m_shutdown(false)
 {
+    // 记录线程池开始时间
+    m_poolStartTimestamp = QTime::currentTime().msecsSinceStartOfDay();
     // 实例化任务队列
     m_taskQ = new TaskQueue;
 
@@ -248,23 +256,6 @@ void ThreadPool::addTask(Task task)
     emit taskListChanged();
 }
 
-void ThreadPool::addTask(int id, callback func, void* arg, int totalTimeMs, int priority)
-{
-    if (m_shutdown) return;
-    m_taskQ->addTask(id, func, arg, totalTimeMs, priority);
-    // 唤醒一个等待的线程
-    m_notEmpty.wakeOne();
-    emit logMessage(
-        QString("[线程池]添加任务 %1 到队列 (耗时:%2s, 优先级:%3)")
-            .arg(id)
-            .arg(totalTimeMs / 1000.0, 0, 'f', 1)
-            .arg(priority)
-    );
-    emit taskListChanged();
-}
-
-
-
 /// 任务相关/////////
 // 获取任务队列中等待任务个数
 int ThreadPool::getWaitingTaskNumber() const
@@ -298,6 +289,8 @@ QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
         info.curThreadId = -1;
         info.totalTimeMs = task.totalTimeMs;
         info.priority = task.priority;
+        info.arrivalTimestampMs = task.arrivalTimestampMs;  // 用于统计HR响应比
+        info.finishTimestampMs = 0;  // 等待任务不参与性能统计
         waitingTaskInfos.append(info);
     }
     return waitingTaskInfos;
@@ -306,6 +299,43 @@ QList<TaskVisualInfo> ThreadPool::getFinishedTaskVisualInfo() const
 {
     QMutexLocker locker(&m_lock);
     return m_finishedTasks;
+}
+
+int ThreadPool::getTotalWaitingTimeMs()
+{
+    QMutexLocker locker(&m_lock);
+    int totalWaitingTimeMs = 0;
+    for (const auto& finishedTask : m_finishedTasks)
+    {
+        totalWaitingTimeMs += finishedTask.finishTimestampMs - finishedTask.arrivalTimestampMs;
+    }
+    return totalWaitingTimeMs;
+}
+
+// 获取总响应比 = (等待时间 + 服务时间) / 服务时间
+double ThreadPool::getTotalResponseRatio()
+{
+    QMutexLocker locker(&m_lock);
+    double totalResponseRatio = 0.0;
+    int validTasks = 0;
+    
+    for (const auto& finishedTask : m_finishedTasks)
+    {
+        int waitTime = finishedTask.finishTimestampMs - finishedTask.arrivalTimestampMs;
+        int executionTime = finishedTask.totalTimeMs;
+        
+        if (executionTime > 0) {
+            double responseRatio = (waitTime + executionTime) / (double)executionTime;
+            totalResponseRatio += responseRatio;
+            validTasks++;
+        }
+    }
+    return validTasks > 0 ? totalResponseRatio : 0.0;
+}
+
+int ThreadPool::getTotalTimeMs()
+{
+    return QTime::currentTime().msecsSinceStartOfDay() - m_poolStartTimestamp;
 }
 
 
@@ -399,6 +429,10 @@ void ThreadPool::setSchedulePolicy(SchedulePolicy policy) {
         case SchedulePolicy::PRIO:
             scheduler = new PRIOScheduler();
             policyName = "PRIO";
+            break;
+        case SchedulePolicy::HRRN:
+            scheduler = new HRRNScheduler();
+            policyName = "HRRN";
             break;
         default:
             scheduler = new FIFOScheduler();

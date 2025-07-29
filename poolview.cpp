@@ -3,6 +3,7 @@
 #include <QPen>
 #include <QBrush>
 #include <QScrollBar>
+#include <QTime>
 namespace {
     // 通用网格节点绘制
     void drawGrid(
@@ -76,7 +77,6 @@ void PoolView::visualizeAll(const QList<ThreadVisualInfo>& threadInfos,
 int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int baseY) {
     const int w = 45, h = 30, spacing = 15, rowSpacing = 5, topSpacing = 5, radius = 10;
     auto scenePtr = scene();
-
     drawGrid(scenePtr, waitingTasks.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
         [&](int x, int y, int col, int idx) {
             QPainterPath path;
@@ -100,6 +100,15 @@ int PoolView::drawWaitingTasks(const QList<TaskVisualInfo>& waitingTasks, int ba
                 case SchedulePolicy::PRIO:
                     label = QString("%1(★%2)").arg(waitingTasks[idx].taskId).arg(waitingTasks[idx].priority);
                     break;
+                case SchedulePolicy::HRRN: {
+                    // 计算响应比
+                    int currentTime = QTime::currentTime().msecsSinceStartOfDay();
+                    int waitTime = currentTime - waitingTasks[idx].arrivalTimestampMs;
+                    double responseRatio = (waitTime + waitingTasks[idx].totalTimeMs) / (double)waitingTasks[idx].totalTimeMs;
+
+                    label = QString("%1(hr%2)").arg(waitingTasks[idx].taskId).arg(responseRatio, 0, 'f', 1);
+                    break;
+                }
                 default:
                     label = QString::number(waitingTasks[idx].taskId);
             }

@@ -16,6 +16,8 @@ struct TaskVisualInfo {
     int curThreadId = -1;  // 正在被哪个线程执行
     int totalTimeMs = 0;  // 总耗时
     int priority = 0;  // 优先级
+    int arrivalTimestampMs = 0;  // 到达时间
+    int finishTimestampMs = 0;   // 完成时间
 };
 
 

@@ -27,7 +27,6 @@ public:
     /// 任务相关/////////
     // 添加任务
     void addTask(Task task);
-    void addTask(int id, callback func, void* arg, int totalTimeMs, int priority);
     // 获取任务队列中等待任务个数
     int getWaitingTaskNumber() const;
     // 获取任务队列中正在执行任务个数
@@ -48,8 +47,14 @@ public:
     QList<TaskVisualInfo> getWaitingTaskVisualInfo() const;
     QList<TaskVisualInfo> getFinishedTaskVisualInfo() const;
 
+    // 线程池性能指标
+    int getTotalWaitingTimeMs();
+    double getTotalResponseRatio();
+    int getTotalTimeMs();
+
     // 设置调度策略
     void setSchedulePolicy(SchedulePolicy policy);
+
 signals:
     // 线程状态变化、任务完成、日志输出（方便UI联动）
     void threadStateChanged(int threadId); 
@@ -130,6 +135,8 @@ private:
 
     QList<TaskVisualInfo> m_finishedTasks;
     bool m_shutdown = false;
+
+    int m_poolStartTimestamp;   // 线程池开始时间,用于计算吞吐量中的总耗时
 };
 
 #endif // THREADPOOL_H

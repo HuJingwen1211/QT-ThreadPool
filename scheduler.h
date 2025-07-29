@@ -12,7 +12,8 @@ enum class SchedulePolicy
     LIFO,
     SJF,
     LJF,
-    PRIO
+    PRIO,
+    HRRN
 };
 
 class TaskScheduler
@@ -22,6 +23,7 @@ public:
     // 插入并排序
     virtual void insertByPolicy(QList<Task> &tasks, const Task& task) = 0;
     virtual void sortQueue(QList<Task> &tasks) = 0;
+    virtual bool needDynamicSort() const { return false; }
 };
 
 /* 先进先出FIFO
@@ -79,5 +81,18 @@ public:
     void insertByPolicy(QList<Task> &tasks, const Task& task) override;
     void sortQueue(QList<Task> &tasks) override;
 };
+/* 最高响应比优先HRRN
+插入：append（加到队尾）
+排序：按响应比排序（降序）
+响应比 = (等待时间 + 服务时间) / 服务时间
+*/
+class HRRNScheduler : public TaskScheduler
+{
+public:
+    ~HRRNScheduler() override = default;
+    void insertByPolicy(QList<Task> &tasks, const Task& task) override;
+    void sortQueue(QList<Task> &tasks) override;
+    bool needDynamicSort() const override { return true; }
+};
 
-#endif // SCHEDULE_H
+#endif // SCHEDULER_H
