@@ -9,6 +9,7 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    communication/filecommunication.cpp \
     main.cpp \
     mainwindow.cpp \
     poolview.cpp \
@@ -17,6 +18,8 @@ SOURCES += \
     threadpool.cpp
 
 HEADERS += \
+    communication/ICommunication.h \
+    communication/filecommunication.h \
     mainwindow.h \
     poolview.h \
     scheduler.h \

@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QTime>
 #include <QTimer>
+#include <QJsonArray>
 
 /*
  * 说明：
@@ -10,6 +11,40 @@
  * 3. 线程池和任务队列都支持信号槽，方便和UI联动。
  * 4. 线程退出用thread->quit()和thread->wait()，自动管理线程生命周期。
  */
+ThreadPool::ThreadPool(int minNum, int maxNum)
+    : m_minNum(minNum), m_maxNum(maxNum), m_busyNum(0), m_aliveNum(0), m_exitNum(0), m_shutdown(false)
+{
+    // 记录线程池开始时间
+    m_poolStartTimestamp = QTime::currentTime().msecsSinceStartOfDay();
+    // 实例化任务队列
+    m_taskQ = new TaskQueue;
+
+    // 创建最小数量的线程
+    for (int i = 0; i < minNum; ++i)
+    {
+        WorkerThread* thread = new WorkerThread(this, i + 1);
+        m_threads.append(thread);
+        thread->start();
+        m_aliveNum++;
+        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1);
+    }
+    // 创建管理者线程
+    m_managerThread = new ManagerThread(this);
+    m_managerThread->start();
+    emitDelayedSignal(QString("[线程池]创建管理者线程"));
+
+    emitDelayedSignal(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
+    
+    // 通信 - 固定路径
+    QString statusFile = "C:\\Users\\hp\\Desktop\\threadpool_status.json";
+    m_comm = new FileCommunication(statusFile);
+    // 任务列表变化时，自动上报状态
+    connect(this, &ThreadPool::taskListChanged, this, &ThreadPool::autoReportStatus);
+    // 心跳机制：定时器
+    m_reportTimer = new QTimer(this);
+    connect(m_reportTimer, &QTimer::timeout, this, &ThreadPool::autoReportStatus);
+    m_reportTimer->start(1000);
+}
 
 // WorkerThread实现
 ThreadPool::WorkerThread::WorkerThread(ThreadPool* pool, int id)
@@ -70,7 +105,7 @@ void ThreadPool::WorkerThread::run()
         setState(1);    // 设置忙碌状态
         setCurTaskId(curTaskId);
         setCurTimeMs(0);
-
+        setCurMemSize(task.memSize);    // 设置正在处理的task的内存大小
         emit m_pool->threadStateChanged(m_id);    // 发送信号
         emit m_pool->taskListChanged(); // 任务列表变化
         m_pool->m_lock.unlock();
@@ -180,30 +215,6 @@ void ThreadPool::ManagerThread::run()
 
 
 
-ThreadPool::ThreadPool(int minNum, int maxNum)
-    : m_minNum(minNum), m_maxNum(maxNum), m_busyNum(0), m_aliveNum(0), m_exitNum(0), m_shutdown(false)
-{
-    // 记录线程池开始时间
-    m_poolStartTimestamp = QTime::currentTime().msecsSinceStartOfDay();
-    // 实例化任务队列
-    m_taskQ = new TaskQueue;
-
-    // 创建最小数量的线程
-    for (int i = 0; i < minNum; ++i)
-    {
-        WorkerThread* thread = new WorkerThread(this, i + 1);
-        m_threads.append(thread);
-        thread->start();
-        m_aliveNum++;
-        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1);
-    }
-    // 创建管理者线程
-    m_managerThread = new ManagerThread(this);
-    m_managerThread->start();
-    emitDelayedSignal(QString("[线程池]创建管理者线程"));
-
-    emitDelayedSignal(QString("[线程池]创建完成，最小线程数: %1，最大线程数: %2").arg(minNum).arg(maxNum));
-}
 
 ThreadPool::~ThreadPool()
 {
@@ -237,6 +248,18 @@ ThreadPool::~ThreadPool()
     }
 
     emit logMessage("[线程池]已正常关闭。");
+
+    // 通信
+    if (m_comm) {
+        delete m_comm;
+        m_comm = nullptr;
+    }
+    // 心跳机制
+    if (m_reportTimer) {
+        m_reportTimer->stop();
+        delete m_reportTimer;
+        m_reportTimer = nullptr;
+    }
 }
 
 void ThreadPool::addTask(Task task)
@@ -248,10 +271,11 @@ void ThreadPool::addTask(Task task)
     m_notEmpty.wakeOne();
     // emit logMessage(QString("[线程池]添加任务 %1 到队列").arg(task.id));
     emit logMessage(
-        QString("[线程池]添加任务 %1 到队列 (耗时:%2s, 优先级:%3)")
+        QString("[线程池]添加任务 %1 到队列 (耗时:%2s, 优先级:%3, 内存:%4B)")
             .arg(task.id)
             .arg(task.totalTimeMs / 1000.0, 0, 'f', 1)
             .arg(task.priority)
+            .arg(task.memSize)
     );
     emit taskListChanged();
 }
@@ -441,4 +465,27 @@ void ThreadPool::setSchedulePolicy(SchedulePolicy policy) {
     }
     m_taskQ->setScheduler(scheduler);
     emit logMessage(QString("[线程池]当前调度策略: %1").arg(policyName));
+}
+
+/// 通信相关/////////
+void ThreadPool::autoReportStatus()
+{
+    if (!m_comm || m_shutdown) return;
+    QJsonObject data;
+    QJsonArray activeTasks;
+
+    QMutexLocker locker(&m_lock);
+    for (auto thread : m_threads)
+    {
+        if (thread->state() == 1)//running
+        {
+            QJsonObject task;
+            task["id"] = thread->curTaskId();
+            task["memSize"] = static_cast<qint64>(thread->curMemSize());
+            activeTasks.append(task);
+        }
+    }
+    
+    data["activeTasks"] = activeTasks;  // 活跃线程
+    m_comm->send(data);
 }

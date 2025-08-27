@@ -326,7 +326,8 @@ void MainWindow::addSingleTask()
     int taskId = ++m_totalTasks;
     int totalTimeMs = QRandomGenerator::global()->bounded(1000, 10001);
     int priority = QRandomGenerator::global()->bounded(1, 11);
-
+    size_t memSize = QRandomGenerator::global()->bounded(1,65);    // 1~64B
+    void* memPtr = nullptr;
     // 维护map
     m_taskIdToTotalTimeMs[taskId] = totalTimeMs;
 
@@ -337,6 +338,8 @@ void MainWindow::addSingleTask()
     task.arg = nullptr;
     task.totalTimeMs = totalTimeMs;
     task.priority = priority;
+    task.memSize = memSize;
+    task.memPtr = memPtr;
     task.arrivalTimestampMs = QTime::currentTime().msecsSinceStartOfDay();
     m_pool->addTask(task);
 }

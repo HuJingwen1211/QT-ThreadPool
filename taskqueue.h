@@ -26,6 +26,9 @@ struct Task
     // 这里不需要加state字段，因为taskQueue里的task状态一定是waiting
     int arrivalTimestampMs = 0;  // 到达时间
     int finishTimestampMs = 0;   // 完成时间
+    // 内存字段
+    size_t memSize = 0;
+    void* memPtr = nullptr;
 };
 
 // 任务队列

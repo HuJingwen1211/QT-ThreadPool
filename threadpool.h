@@ -6,9 +6,12 @@
 #include <QThread>
 #include <QList>
 #include <QWaitCondition>
+#include <QTimer>
 #include "taskqueue.h"
 #include "visualinfo.h"
 #include "scheduler.h"
+#include "communication/filecommunication.h"
+
 
 /*
  * 说明：
@@ -67,6 +70,8 @@ private:
     void threadExit(int threadId);
     void emitDelayedSignal(const QString& logMsg = "", int threadId = -1);
 
+    // 通信相关
+    void autoReportStatus();
 /*
     QThread 线程类核心说明
     - start()    // 启动线程，自动调用 run()
@@ -98,13 +103,16 @@ private:
         // 新增curTimeMs字段：线程忙碌时正在处理的task的已耗时
         int curTimeMs() const { return m_curTimeMs; }
         void setCurTimeMs(int curTimeMs) { m_curTimeMs = curTimeMs; }
-
+        // 新增curMemSize字段：线程忙碌时正在处理的task的内存大小
+        size_t curMemSize() const { return m_curMemSize; }
+        void setCurMemSize(size_t curMemSize) { m_curMemSize = curMemSize; }
     private:
         ThreadPool* m_pool;
         int m_id;
         int m_state = 0; // 0=空闲, 1=忙碌, -1=退出
         int m_curTaskId = -1;
         int m_curTimeMs = 0;
+        size_t m_curMemSize = 0;    
     };
 
     // 管理者线程类，继承QThread，重写run方法
@@ -137,6 +145,11 @@ private:
     bool m_shutdown = false;
 
     int m_poolStartTimestamp;   // 线程池开始时间,用于计算吞吐量中的总耗时
+
+    // 通信相关
+    FileCommunication* m_comm = nullptr;
+    // 心跳机制：定时器
+    QTimer* m_reportTimer = nullptr;
 };
 
 #endif // THREADPOOL_H
