@@ -43,7 +43,7 @@ public:
     // 获取活着的线程个数
     int getAliveNumber() const;
     // 获取线程状态
-    int getThreadState(int threadId) const;
+    ThreadState getThreadState(int threadId) const;
     // 获得线程可视化信息
     QList<ThreadVisualInfo> getThreadVisualInfo() const;
     // 获得任务可视化信息
@@ -95,21 +95,24 @@ private:
         void run() override;
         int id() const { return m_id; }
         // 新增state字段，线程状态：0=空闲, 1=忙碌, -1=退出
-        int state() const { return m_state; }   // 内部使用，如果外部使用需要用getThreadState()
-        void setState(int state) { m_state = state; }
+        ThreadState state() const { return m_state; }   // 内部使用，如果外部使用需要用getThreadState()
         // 新增curTaskId字段：线程忙碌时正在处理的task的id
         int curTaskId() const { return m_curTaskId; }
-        void setCurTaskId(int curTaskId) { m_curTaskId = curTaskId; }
         // 新增curTimeMs字段：线程忙碌时正在处理的task的已耗时
         int curTimeMs() const { return m_curTimeMs; }
-        void setCurTimeMs(int curTimeMs) { m_curTimeMs = curTimeMs; }
         // 新增curMemSize字段：线程忙碌时正在处理的task的内存大小
         size_t curMemSize() const { return m_curMemSize; }
+        
+        // setter
+        void setState(ThreadState state) { m_state = state; }
+        void setCurTaskId(int curTaskId) { m_curTaskId = curTaskId; }
+        void setCurTimeMs(int curTimeMs) { m_curTimeMs = curTimeMs; }
         void setCurMemSize(size_t curMemSize) { m_curMemSize = curMemSize; }
+   
     private:
         ThreadPool* m_pool;
         int m_id;
-        int m_state = 0; // 0=空闲, 1=忙碌, -1=退出
+        ThreadState m_state = THREAD_IDLE; // 0=空闲, 1=忙碌, -1=退出
         int m_curTaskId = -1;
         int m_curTimeMs = 0;
         size_t m_curMemSize = 0;    
@@ -125,9 +128,10 @@ private:
         ThreadPool* m_pool;
     };
 
-   
-
-private:
+    // 常量
+    static const int MANAGER_CHECK_INTERVAL_S = 5;
+    static const int STEP_TIME_MS = 100;
+    static const int THREAD_EXPAND_NUMBER = 2;
 
     mutable QMutex m_lock;          // Qt互斥锁，替代pthread_mutex_t
     QWaitCondition m_notEmpty;      // Qt条件变量，替代pthread_cond_t

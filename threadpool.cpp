@@ -74,7 +74,7 @@ void ThreadPool::WorkerThread::run()
                 if (m_pool->m_aliveNum > m_pool->m_minNum)
                 {
                     m_pool->m_aliveNum--;
-                    setState(-1);   // 线程退出
+                    setState(THREAD_EXIT);   // 线程退出
                     emit m_pool->threadStateChanged(m_id);  // 先发射状态变化信号
                     emit m_pool->taskListChanged(); // 任务列表变化
                     m_pool->m_lock.unlock();
@@ -87,7 +87,7 @@ void ThreadPool::WorkerThread::run()
         // 检查线程池是否关闭
         if (m_pool->m_shutdown) // 若关闭
         {
-            setState(-1);
+            setState(THREAD_EXIT);
             emit m_pool->threadStateChanged(m_id);
             emit m_pool->taskListChanged(); // 任务列表变化
             m_pool->m_lock.unlock();
@@ -100,12 +100,13 @@ void ThreadPool::WorkerThread::run()
         Task task = m_pool->m_taskQ->takeTask();
         int curTaskId = task.id;
         int totalTimeMs = task.totalTimeMs;
+        size_t memSize = task.memSize;
 
         m_pool->m_busyNum++;
-        setState(1);    // 设置忙碌状态
+        setState(THREAD_BUSY);    // 设置忙碌状态
         setCurTaskId(curTaskId);
         setCurTimeMs(0);
-        setCurMemSize(task.memSize);    // 设置正在处理的task的内存大小
+        setCurMemSize(memSize);    // 设置正在处理的task的内存大小
         emit m_pool->threadStateChanged(m_id);    // 发送信号
         emit m_pool->taskListChanged(); // 任务列表变化
         m_pool->m_lock.unlock();
@@ -113,7 +114,7 @@ void ThreadPool::WorkerThread::run()
         // 执行任务
         // 分段sleep，定期更新curTimeMs
         int elapsedTimeMs = 0;  // 已耗时
-        int stepTimeMs = 100;   // 刷新频率，每100ms刷新一次
+        int stepTimeMs = STEP_TIME_MS;   // 刷新频率，每100ms刷新一次
         while (elapsedTimeMs < totalTimeMs) {
             QThread::msleep(stepTimeMs);
             elapsedTimeMs += stepTimeMs;
@@ -138,7 +139,7 @@ void ThreadPool::WorkerThread::run()
         // 添加到已完成任务列表
         TaskVisualInfo info;
         info.taskId = curTaskId;
-        info.state = 2; // finished
+        info.state = TASK_FINISHED; // finished
         info.curThreadId = m_id;
         info.totalTimeMs = totalTimeMs;
         info.priority = task.priority;
@@ -147,7 +148,7 @@ void ThreadPool::WorkerThread::run()
 
         m_pool->m_finishedTasks.append(info);
 
-        setState(0);    // 设置空闲状态
+        setState(THREAD_IDLE);    // 设置空闲状态
         emit m_pool->threadStateChanged(m_id);
         emit m_pool->taskListChanged(); // 任务列表变化
         emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
@@ -165,7 +166,7 @@ void ThreadPool::ManagerThread::run()
     while(m_pool && !m_pool->m_shutdown)
     {
         // 每隔5s检测一次
-        QThread::sleep(5);
+        QThread::sleep(MANAGER_CHECK_INTERVAL_S);
         // 取出线程池中的任务数和线程数量
         m_pool->m_lock.lock();
         int queueSize = m_pool->m_taskQ->taskNumber();
@@ -174,7 +175,7 @@ void ThreadPool::ManagerThread::run()
         m_pool->m_lock.unlock();
 
         // 控制线程池扩容速度的参数。每次最多创建2个线程
-        const int NUMBER = 2;
+        const int NUMBER = THREAD_EXPAND_NUMBER;
         // 当前任务个数>存活的线程数 && 存活的线程数<最大线程个数
         if (queueSize > liveNum && liveNum < m_pool->m_maxNum)
         {
@@ -187,7 +188,7 @@ void ThreadPool::ManagerThread::run()
                 WorkerThread* thread = new WorkerThread(m_pool, m_pool->m_aliveNum + 1);
                 m_pool->m_threads.append(thread);
                 thread->start();
-                thread->setState(0);
+                thread->setState(THREAD_IDLE);
                 m_pool->m_aliveNum++;
                 emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(m_pool->m_aliveNum));
                 emit m_pool->threadStateChanged(m_pool->m_aliveNum);
@@ -309,7 +310,7 @@ QList<TaskVisualInfo> ThreadPool::getWaitingTaskVisualInfo() const
     {
         TaskVisualInfo info;
         info.taskId = task.id;
-        info.state = 0; // waiting
+        info.state = TASK_WAITING; // waiting
         info.curThreadId = -1;
         info.totalTimeMs = task.totalTimeMs;
         info.priority = task.priority;
@@ -397,7 +398,7 @@ void ThreadPool::emitDelayedSignal(const QString& logMsg, int threadId)
     });
 }
 
-int ThreadPool::getThreadState(int threadId) const
+ThreadState ThreadPool::getThreadState(int threadId) const
 {
     QMutexLocker locker(&m_lock);
     for (auto thread : m_threads)
@@ -407,7 +408,7 @@ int ThreadPool::getThreadState(int threadId) const
             return thread->state();
         }
     }
-    return -1;
+    return THREAD_EXIT;
 }
 
 QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
@@ -417,7 +418,7 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
     for (auto thread : m_threads)
     {
         // 线程退出后不显示
-        if (thread->state() == -1) continue;
+        if (thread->state() == THREAD_EXIT) continue;
         ThreadVisualInfo info;
         info.threadId = thread->id();
         info.state = thread->state();
@@ -477,7 +478,7 @@ void ThreadPool::autoReportStatus()
     QMutexLocker locker(&m_lock);
     for (auto thread : m_threads)
     {
-        if (thread->state() == 1)//running
+        if (thread->state() == THREAD_BUSY)//running
         {
             QJsonObject task;
             task["id"] = thread->curTaskId();
