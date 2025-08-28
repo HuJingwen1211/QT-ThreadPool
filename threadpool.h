@@ -72,6 +72,8 @@ private:
 
     // 通信相关
     void autoReportStatus();
+
+
 /*
     QThread 线程类核心说明
     - start()    // 启动线程，自动调用 run()
@@ -110,6 +112,12 @@ private:
         void setCurMemSize(size_t curMemSize) { m_curMemSize = curMemSize; }
    
     private:
+        // 任务状态统一管理入口
+        void startTask(const Task& task);
+        void executeTask(const Task& task);
+        void finishTask(const Task& task);
+    
+
         ThreadPool* m_pool;
         int m_id;
         ThreadState m_state = THREAD_IDLE; // 0=空闲, 1=忙碌, -1=退出
@@ -130,7 +138,7 @@ private:
 
     // 常量
     static const int MANAGER_CHECK_INTERVAL_S = 5;
-    static const int STEP_TIME_MS = 100;
+    static const int STEP_TIME_MS = 20;
     static const int THREAD_EXPAND_NUMBER = 2;
 
     mutable QMutex m_lock;          // Qt互斥锁，替代pthread_mutex_t
@@ -149,6 +157,7 @@ private:
     bool m_shutdown = false;
 
     int m_poolStartTimestamp;   // 线程池开始时间,用于计算吞吐量中的总耗时
+    int m_nextThreadId = 1;
 
     // 通信相关
     FileCommunication* m_comm = nullptr;

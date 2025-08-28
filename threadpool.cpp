@@ -22,11 +22,11 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
     // 创建最小数量的线程
     for (int i = 0; i < minNum; ++i)
     {
-        WorkerThread* thread = new WorkerThread(this, i + 1);
+        WorkerThread* thread = new WorkerThread(this, m_nextThreadId++);
         m_threads.append(thread);
         thread->start();
         m_aliveNum++;
-        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(i + 1), i + 1);
+        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(thread->id()), thread->id());
     }
     // 创建管理者线程
     m_managerThread = new ManagerThread(this);
@@ -54,108 +54,125 @@ ThreadPool::WorkerThread::WorkerThread(ThreadPool* pool, int id)
 
 void ThreadPool::WorkerThread::run()
 {
-    // 一直不停的工作
     while(m_pool && !m_pool->m_shutdown)
     {
-        // 访问任务队列(共享资源)加锁
-        m_pool->m_lock.lock();
-
-        // 如果任务队列为空且线程池未关闭，阻塞等待
-        while (m_pool->m_taskQ->taskNumber() == 0 && !m_pool->m_shutdown)
+        Task task;
+        bool shouldExit = false;
         {
-            // 阻塞线程
-            // qDebug() << "线程池开启且任务队列为空，阻塞！thread" << m_id << "waiting...";
-            m_pool->m_notEmpty.wait(&m_pool->m_lock);
-
-            // 解除阻塞后,检查是否需要销毁线程
-            if (m_pool->m_exitNum > 0)
+            QMutexLocker locker(&m_pool->m_lock);
+            /// 一、任务队列为空，阻塞等待任务
+            while (m_pool->m_taskQ->taskNumber() == 0   //任务队列为空
+                    && !m_pool->m_shutdown  //线程池未关闭
+                    && m_pool->m_exitNum == 0)   //不需要缩容
             {
-                m_pool->m_exitNum --;
-                if (m_pool->m_aliveNum > m_pool->m_minNum)
-                {
-                    m_pool->m_aliveNum--;
-                    setState(THREAD_EXIT);   // 线程退出
-                    emit m_pool->threadStateChanged(m_id);  // 先发射状态变化信号
-                    emit m_pool->taskListChanged(); // 任务列表变化
-                    m_pool->m_lock.unlock();
-                    m_pool->threadExit(m_id);
-                    return;
-                }
+                // 等待条件变量，内部自动释放锁
+                m_pool->m_notEmpty.wait(&m_pool->m_lock);
             }
-        }
-        // 程序执行到这:说明任务队列不为空
-        // 检查线程池是否关闭
-        if (m_pool->m_shutdown) // 若关闭
+            /// 二、任务队列里有了任务
+            // 情况1：缩容退出
+            if (m_pool->m_exitNum > 0
+                && m_pool->m_aliveNum > m_pool->m_minNum)
+            {
+                m_pool->m_exitNum--;
+                m_pool->m_aliveNum--;
+                setState(THREAD_EXIT);
+                shouldExit = true;
+            }
+            // 情况2：线程池关闭
+            if (!shouldExit && m_pool->m_shutdown)
+            {
+                setState(THREAD_EXIT);
+                shouldExit = true;
+            }
+            // 情况3：正常取任务
+            if (!shouldExit)
+            {
+                task = m_pool->m_taskQ->takeTask();
+                startTask(task);
+            }
+        }   // 释放锁
+        if (shouldExit)
         {
-            setState(THREAD_EXIT);
+            // 线程退出，发送信号
             emit m_pool->threadStateChanged(m_id);
-            emit m_pool->taskListChanged(); // 任务列表变化
-            m_pool->m_lock.unlock();
+            emit m_pool->taskListChanged();
             m_pool->threadExit(m_id);
             return;
         }
-
-        // 程序执行到这:说明任务队列不为空,且线程池运行
-        // 从任务队列取出任务
-        Task task = m_pool->m_taskQ->takeTask();
-        int curTaskId = task.id;
-        int totalTimeMs = task.totalTimeMs;
-        size_t memSize = task.memSize;
-
-        m_pool->m_busyNum++;
-        setState(THREAD_BUSY);    // 设置忙碌状态
-        setCurTaskId(curTaskId);
-        setCurTimeMs(0);
-        setCurMemSize(memSize);    // 设置正在处理的task的内存大小
-        emit m_pool->threadStateChanged(m_id);    // 发送信号
-        emit m_pool->taskListChanged(); // 任务列表变化
-        m_pool->m_lock.unlock();
-
+        // start的emit放在锁外，线程状态变化:IDLE->BUSY
+        emit m_pool->threadStateChanged(m_id);
+        emit m_pool->taskListChanged();
         // 执行任务
-        // 分段sleep，定期更新curTimeMs
-        int elapsedTimeMs = 0;  // 已耗时
-        int stepTimeMs = STEP_TIME_MS;   // 刷新频率，每100ms刷新一次
-        while (elapsedTimeMs < totalTimeMs) {
-            QThread::msleep(stepTimeMs);
-            elapsedTimeMs += stepTimeMs;
-            if (elapsedTimeMs > totalTimeMs) elapsedTimeMs = totalTimeMs;  // 防止溢出
-            setCurTimeMs(elapsedTimeMs);
-            emit m_pool->threadStateChanged(m_id);  // 通知UI更新
-        }
-        setCurTimeMs(totalTimeMs);  // 任务结束时，已耗时=总耗时
-        emit m_pool->threadStateChanged(m_id);  // 通知UI更新
+        executeTask(task);
+        finishTask(task);
+    }
+}
+void ThreadPool::WorkerThread::startTask(const Task& task)
+{
+    m_pool->m_busyNum++;
 
-        // 可以注释 因为目前没有用到执行函数
-        // if (task.function) {
-        //     task.function(task.arg);
-        //     if (task.arg) {
-        //         delete task.arg;
-        //         task.arg = nullptr;
-        //     }
-        // }
-        // 任务处理结束
-        m_pool->m_lock.lock();
+    setState(THREAD_BUSY);    // 设置忙碌状态
+    setCurTaskId(task.id);
+    setCurTimeMs(0);
+    setCurMemSize(task.memSize);    // 设置正在处理的task的内存大小
+}
+void ThreadPool::WorkerThread::executeTask(const Task& task)
+{
+    // 分段sleep，定期更新curTimeMs
+    int elapsedTimeMs = 0;  // 已耗时
+    int stepTimeMs = STEP_TIME_MS;   // 刷新频率
+
+    while (elapsedTimeMs < task.totalTimeMs) {
+        QThread::msleep(stepTimeMs);
+        elapsedTimeMs += stepTimeMs;
+        if (elapsedTimeMs > task.totalTimeMs) elapsedTimeMs = task.totalTimeMs;  // 防止溢出
+        {
+            QMutexLocker locker(&m_pool->m_lock);
+            setCurTimeMs(elapsedTimeMs);  
+        }
+        // 发送信号
+        emit m_pool->threadStateChanged(m_id);
+    }
+    // 任务结束时，已耗时=总耗时
+    {
+        QMutexLocker locker(&m_pool->m_lock);
+        setCurTimeMs(task.totalTimeMs);
+    }
+    // 发送信号
+    emit m_pool->threadStateChanged(m_id);
+}
+void ThreadPool::WorkerThread::finishTask(const Task& task)
+{
+    {
+        QMutexLocker locker(&m_pool->m_lock);
         m_pool->m_busyNum--;
-        // 添加到已完成任务列表
+        // 添加到已完成任务列表 （这里需要加锁，因为finishedTasks是共享资源）
         TaskVisualInfo info;
-        info.taskId = curTaskId;
+        info.taskId = task.id;
         info.state = TASK_FINISHED; // finished
         info.curThreadId = m_id;
-        info.totalTimeMs = totalTimeMs;
+        info.totalTimeMs = task.totalTimeMs;
         info.priority = task.priority;
         info.arrivalTimestampMs = task.arrivalTimestampMs;
         info.finishTimestampMs = QTime::currentTime().msecsSinceStartOfDay();
 
         m_pool->m_finishedTasks.append(info);
 
-        setState(THREAD_IDLE);    // 设置空闲状态
-        emit m_pool->threadStateChanged(m_id);
-        emit m_pool->taskListChanged(); // 任务列表变化
-        emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
-        m_pool->m_lock.unlock();
+        // 设置空闲状态，重置所有字段
+        setState(THREAD_IDLE);
+        setCurTaskId(-1);
+        setCurTimeMs(0);
+        setCurMemSize(0);
     }
-}
 
+
+
+    // 发送信号
+    emit m_pool->threadStateChanged(m_id);
+    emit m_pool->taskListChanged(); // 任务列表变化
+    emit m_pool->logMessage(QString("[线程池]任务 %1 已完成").arg(task.id));
+
+}
 // 管理者线程实现
 ThreadPool::ManagerThread::ManagerThread(ThreadPool* pool)
     : m_pool(pool)
@@ -168,41 +185,54 @@ void ThreadPool::ManagerThread::run()
         // 每隔5s检测一次
         QThread::sleep(MANAGER_CHECK_INTERVAL_S);
         // 取出线程池中的任务数和线程数量
-        m_pool->m_lock.lock();
-        int queueSize = m_pool->m_taskQ->taskNumber();
-        int liveNum = m_pool->m_aliveNum;
-        int busyNum = m_pool->m_busyNum;
-        m_pool->m_lock.unlock();
+        int queueSize = 0;
+        int liveNum = 0;
+        int busyNum = 0;
+        {
+            QMutexLocker locker(&m_pool->m_lock);
+            queueSize = m_pool->m_taskQ->taskNumber();
+            liveNum = m_pool->m_aliveNum;
+            busyNum = m_pool->m_busyNum;
+        }
 
         // 控制线程池扩容速度的参数。每次最多创建2个线程
         const int NUMBER = THREAD_EXPAND_NUMBER;
         // 当前任务个数>存活的线程数 && 存活的线程数<最大线程个数
         if (queueSize > liveNum && liveNum < m_pool->m_maxNum)
         {
+            QVector<WorkerThread*> newThreads;
             // 线程池加锁
-            m_pool->m_lock.lock();
-            // 有NUMBER限制，每次只创建2个线程；5s后再检查，如果有需要就再创建2个
-            for (int i = 0; i < NUMBER && m_pool->m_aliveNum < m_pool->m_maxNum; ++i)
             {
-                // 创建新线程
-                WorkerThread* thread = new WorkerThread(m_pool, m_pool->m_aliveNum + 1);
-                m_pool->m_threads.append(thread);
+                QMutexLocker locker(&m_pool->m_lock);
+            
+                // 有NUMBER限制，每次只创建2个线程；5s后再检查，如果有需要就再创建2个
+                for (int i = 0; i < NUMBER && m_pool->m_aliveNum < m_pool->m_maxNum; ++i)
+                {
+                    // 创建新线程
+                    WorkerThread* thread = new WorkerThread(m_pool, m_pool->m_nextThreadId++);
+                    m_pool->m_threads.append(thread);
+                    newThreads.append(thread);
+                    thread->setState(THREAD_IDLE);
+                    m_pool->m_aliveNum++;
+                }
+            }// 释放锁
+
+            for (auto thread : newThreads)
+            {
                 thread->start();
-                thread->setState(THREAD_IDLE);
-                m_pool->m_aliveNum++;
-                emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(m_pool->m_aliveNum));
-                emit m_pool->threadStateChanged(m_pool->m_aliveNum);
+                emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(thread->id()));
+                emit m_pool->threadStateChanged(thread->id());
             }
-            m_pool->m_lock.unlock();
         }
 
         // 销毁多余的线程
         // 忙线程*2 < 存活的线程数目 && 存活的线程数 > 最小线程数量
         if (busyNum * 2 < liveNum && liveNum > m_pool->m_minNum)
         {
-            m_pool->m_lock.lock();
-            m_pool->m_exitNum = NUMBER;
-            m_pool->m_lock.unlock();
+            {
+                QMutexLocker locker(&m_pool->m_lock);
+                m_pool->m_exitNum = NUMBER;
+            }
             // 唤醒NUMBER个等待的线程，让他们退出
             for (int i = 0; i < NUMBER; ++i)
             {

@@ -166,16 +166,16 @@ int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY)
     drawGrid(scenePtr, threadInfos.size(), w, h, spacing, rowSpacing, topSpacing, baseY,
         [&](int x, int y, int /*col*/, int idx) {
             const auto& info = threadInfos[idx];
-            if (info.state == -1) return;
+            if (info.state == THREAD_EXIT) return;
 
             QColor idleColor = Qt::green;
             QColor busyDoneColor = Qt::green;
             QColor busyTodoColor = Qt::red;
 
-            if (info.state == 0) {
+            if (info.state == THREAD_IDLE) {
                 // 空闲线程，全部绿色
                 scenePtr->addRect(x, y, w, h, QPen(Qt::white, 2), QBrush(idleColor));
-            } else if (info.state == 1 && info.curTaskId != -1) {
+            } else if (info.state == THREAD_BUSY && info.curTaskId != -1) {
                 // 用map获取totalTimeMs, 用于绘制进度条
                 int totalTimeMs = m_taskIdToTotalTimeMs.value(info.curTaskId);
                 // 忙碌线程，左侧绿色（已完成），右侧红色（未完成）
@@ -199,7 +199,7 @@ int PoolView::drawThreads(const QList<ThreadVisualInfo>& threadInfos, int baseY)
 
             // 画文字
             QString label = QString("T%1").arg(info.threadId);
-            if (info.state == 1 && info.curTaskId != -1)
+            if (info.state == THREAD_BUSY && info.curTaskId != -1)
                 label += QString(" #%1").arg(info.curTaskId);
             auto* text = scenePtr->addSimpleText(label);
             text->setBrush(Qt::black);
