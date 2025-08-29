@@ -32,14 +32,14 @@ void MainWindow::on_startButton_clicked()
     int maxThreads = ui->maxThreadSpinBox->value();
 
     // 创建线程池
-    m_pool = new ThreadPool(minThreads, maxThreads);
+    m_pool = std::make_unique<ThreadPool>(minThreads, maxThreads);
 
 
     // 日志输出
-    connect(m_pool, &ThreadPool::logMessage, this, &MainWindow::onLogMessage);
+    connect(m_pool.get(), &ThreadPool::logMessage, this, &MainWindow::onLogMessage);
     // 统一UI刷新
-    connect(m_pool, &ThreadPool::taskListChanged, this, &MainWindow::refreshAllUI);
-    connect(m_pool, &ThreadPool::threadStateChanged, this, &MainWindow::refreshAllUI);
+    connect(m_pool.get(), &ThreadPool::taskListChanged, this, &MainWindow::refreshAllUI);
+    connect(m_pool.get(), &ThreadPool::threadStateChanged, this, &MainWindow::refreshAllUI);
 
     // 调度策略选择
     m_pool->setSchedulePolicy(static_cast<SchedulePolicy>(ui->scheduleComboBox->currentIndex()));
@@ -57,10 +57,8 @@ void MainWindow::on_stopButton_clicked()
 
     // 1. 检查线程池是否存在
     if (m_pool) {
-        disconnect(m_pool, &ThreadPool::taskListChanged, this, nullptr); // 断开taskListChanged信号槽
-        disconnect(m_pool, &ThreadPool::threadStateChanged, this, nullptr); // 断开threadStateChanged信号槽
-        delete m_pool;      // 安全析构线程池，等待所有线程退出
-        m_pool = nullptr;
+        disconnect(m_pool.get(), &ThreadPool::taskListChanged, this, nullptr); // 断开taskListChanged信号槽
+        disconnect(m_pool.get(), &ThreadPool::threadStateChanged, this, nullptr); // 断开threadStateChanged信号槽
     }
 
     // 2. 禁用相关按钮

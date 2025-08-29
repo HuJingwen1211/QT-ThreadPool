@@ -17,19 +17,21 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
     // 记录线程池开始时间
     m_poolStartTimestamp = QTime::currentTime().msecsSinceStartOfDay();
     // 实例化任务队列
-    m_taskQ = new TaskQueue;
+    m_taskQ = std::make_unique<TaskQueue>();
 
     // 创建最小数量的线程
     for (int i = 0; i < minNum; ++i)
     {
-        WorkerThread* thread = new WorkerThread(this, m_nextThreadId++);
-        m_threads.append(thread);
+        auto thread = std::make_unique<WorkerThread>(this, m_nextThreadId++);
+        int threadId = thread->id();
         thread->start();
+        m_threads.emplace_back(std::move(thread));
+        
         m_aliveNum++;
-        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(thread->id()), thread->id());
+        emitDelayedSignal(QString("[线程池]创建子线程, ID: %1").arg(threadId), threadId);
     }
     // 创建管理者线程
-    m_managerThread = new ManagerThread(this);
+    m_managerThread = std::make_unique<ManagerThread>(this);
     m_managerThread->start();
     emitDelayedSignal(QString("[线程池]创建管理者线程"));
 
@@ -37,12 +39,12 @@ ThreadPool::ThreadPool(int minNum, int maxNum)
     
     // 通信 - 固定路径
     QString statusFile = "C:\\Users\\hp\\Desktop\\threadpool_status.json";
-    m_comm = new FileCommunication(statusFile);
+    m_comm = std::make_unique<FileCommunication>(statusFile);
     // 任务列表变化时，自动上报状态
     connect(this, &ThreadPool::taskListChanged, this, &ThreadPool::autoReportStatus);
     // 心跳机制：定时器
-    m_reportTimer = new QTimer(this);
-    connect(m_reportTimer, &QTimer::timeout, this, &ThreadPool::autoReportStatus);
+    m_reportTimer = std::make_unique<QTimer>(this);
+    connect(m_reportTimer.get(), &QTimer::timeout, this, &ThreadPool::autoReportStatus);
     m_reportTimer->start(1000);
 }
 
@@ -200,7 +202,7 @@ void ThreadPool::ManagerThread::run()
         // 当前任务个数>存活的线程数 && 存活的线程数<最大线程个数
         if (queueSize > liveNum && liveNum < m_pool->m_maxNum)
         {
-            QVector<WorkerThread*> newThreads;
+            std::vector<std::unique_ptr<WorkerThread>> newThreads;
             // 线程池加锁
             {
                 QMutexLocker locker(&m_pool->m_lock);
@@ -209,19 +211,22 @@ void ThreadPool::ManagerThread::run()
                 for (int i = 0; i < NUMBER && m_pool->m_aliveNum < m_pool->m_maxNum; ++i)
                 {
                     // 创建新线程
-                    WorkerThread* thread = new WorkerThread(m_pool, m_pool->m_nextThreadId++);
-                    m_pool->m_threads.append(thread);
-                    newThreads.append(thread);
+                    auto thread = std::make_unique<WorkerThread>(m_pool, m_pool->m_nextThreadId++);
                     thread->setState(THREAD_IDLE);
                     m_pool->m_aliveNum++;
+                    // 先放到newThreads，再移动到m_threads，因为unique_ptr不能复制，必须移动
+                    newThreads.emplace_back(std::move(thread));
+                    
                 }
             }// 释放锁
 
-            for (auto thread : newThreads)
+            for (auto& thread : newThreads)
             {
+                int threadId = thread->id();
                 thread->start();
-                emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(thread->id()));
-                emit m_pool->threadStateChanged(thread->id());
+                m_pool->m_threads.emplace_back(std::move(thread));
+                emit m_pool->logMessage(QString("[管理者线程]创建新工作线程, ID: %1").arg(threadId));
+                emit m_pool->threadStateChanged(threadId);
             }
         }
 
@@ -259,22 +264,18 @@ ThreadPool::~ThreadPool()
     if (m_managerThread)
     {
         m_managerThread->wait();
-        delete m_managerThread;
         m_managerThread = nullptr;
         emit logMessage("[线程池]管理者线程已安全退出");
     }
     // 等待所有线程结束
-    for (WorkerThread* thread : m_threads)
+    for (const auto& thread : m_threads)
     {
-        // thread->quit(); // 通知线程退出
-        qDebug() << "[线程池] 等待线程" << thread << "退出...";
+        qDebug() << "[线程池] 等待线程" << thread->id() << "退出...";
         thread->wait();
-        qDebug() << "[线程池] 线程" << thread << "已安全退出";
-        delete thread;
+        qDebug() << "[线程池] 线程" << thread->id() << "已安全退出";
     }
 
     if (m_taskQ) {
-        delete m_taskQ;
         m_taskQ = nullptr;
     }
 
@@ -282,13 +283,11 @@ ThreadPool::~ThreadPool()
 
     // 通信
     if (m_comm) {
-        delete m_comm;
         m_comm = nullptr;
     }
     // 心跳机制
     if (m_reportTimer) {
         m_reportTimer->stop();
-        delete m_reportTimer;
         m_reportTimer = nullptr;
     }
 }
@@ -431,7 +430,7 @@ void ThreadPool::emitDelayedSignal(const QString& logMsg, int threadId)
 ThreadState ThreadPool::getThreadState(int threadId) const
 {
     QMutexLocker locker(&m_lock);
-    for (auto thread : m_threads)
+    for (const auto& thread : m_threads)
     {
         if (thread->id() == threadId)
         {
@@ -445,7 +444,7 @@ QList<ThreadVisualInfo> ThreadPool::getThreadVisualInfo() const
 {
     QList<ThreadVisualInfo> threadInfos;
     QMutexLocker locker(&m_lock);
-    for (auto thread : m_threads)
+    for (const auto& thread : m_threads)
     {
         // 线程退出后不显示
         if (thread->state() == THREAD_EXIT) continue;
@@ -506,7 +505,7 @@ void ThreadPool::autoReportStatus()
     QJsonArray activeTasks;
 
     QMutexLocker locker(&m_lock);
-    for (auto thread : m_threads)
+    for (const auto& thread : m_threads)
     {
         if (thread->state() == THREAD_BUSY)//running
         {

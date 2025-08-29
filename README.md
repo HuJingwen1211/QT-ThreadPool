@@ -27,40 +27,55 @@
 - **HRRN（最高响应比优先）**：动态计算响应比，防止饥饿
 
 ### 技术特性
+- **现代C++17**：全面使用智能指针和RAII模式
+- **智能内存管理**：std::unique_ptr自动管理所有动态对象
+- **高性能容器**：std::vector替代Qt容器，提升性能和兼容性
 - **线程安全**：QMutex/QWaitCondition 保护所有共享资源
 - **信号槽机制**：UI与业务彻底解耦，所有刷新统一由快照数据驱动
 - **优雅架构**：虚函数实现调度器多态，代码结构清晰
 - **动态排序**：HRRN算法支持实时重新排序，响应比随时间动态变化
-
 ---
+
 
 ## 设计亮点
 
-### 1. 调度器架构设计
+### 1. 现代C++架构设计
+- **智能指针管理**：std::unique_ptr管理所有动态对象，实现RAII自动内存管理
+- **高性能容器**：std::vector替代Qt容器，解决兼容性问题，提升性能
+- **类型安全**：enum class替代魔法数字，编译时类型检查
+- **异常安全**：智能指针确保异常时资源自动释放
+
+### 2. 智能指针所有权管理
+- **先获取信息**：在move之前获取所有必要信息（如线程ID）
+- **再转移所有权**：使用std::move转移unique_ptr所有权
+- **使用保存信息**：后续操作使用之前保存的信息，避免空指针访问
+- **RAII模式**：自动内存管理，无需手动delete
+
+### 3. 调度器架构设计
 - **基类抽象**：`TaskScheduler` 基类定义统一接口
 - **多态实现**：每种算法独立实现，支持运行时切换
 - **虚函数优化**：`needsDynamicSort()` 方法优雅处理动态排序需求
 - **代码复用**：`insertByPolicy()` 调用 `sortQueue()` 减少重复代码
 
-### 2. HRRN算法实现
+### 4. HRRN算法实现
 - **动态响应比**：响应比 = (等待时间 + 服务时间) / 服务时间
 - **实时排序**：每次取任务时重新计算和排序
 - **防止饥饿**：等待时间越长，响应比越高，优先级越高
 - **性能优化**：只对HRRN算法重新排序，其他算法保持静态排序
 
-### 3. 性能指标系统
+### 5. 性能指标系统
 - **平均等待时间**：Σ(完成时间 - 到达时间) / 已完成任务数
 - **平均响应比**：Σ(各任务响应比) / 已完成任务数
 - **吞吐量**：已完成任务数 / 线程池运行时间
 - **CPU利用率**：(忙碌线程数 / 总线程数) × 100%
 
-### 4. 任务添加优化
+### 6. 任务添加优化
 - **QToolButton设计**：单按钮支持单击和下拉菜单
 - **批量添加**：支持5个、10个、20个任务快速添加
 - **间隔添加**：支持自定义间隔时间，模拟真实任务到达
 - **优雅实现**：使用 `QTimer::singleShot` 避免UI阻塞
 
-### 5. 数据结构设计
+### 7. 数据结构设计
 - **字段分离**：`totalTimeMs` 在任务结构体，`curTimeMs` 在线程结构体
 - **时间戳统一**：使用 `QTime::currentTime().msecsSinceStartOfDay()` 统一时间处理
 - **快照机制**：UI只依赖快照数据，与业务逻辑彻底解耦
@@ -68,6 +83,7 @@
 ---
 
 ## 项目结构
+
 
 ```
 ThreadPool/
@@ -83,7 +99,6 @@ ThreadPool/
 
 ---
 
-
 ---
 
 ## 软件设计图
@@ -94,7 +109,7 @@ ThreadPool/
 classDiagram
     class MainWindow {
         -Ui::MainWindow* ui
-        -ThreadPool* m_pool
+        -std::unique_ptr<ThreadPool> m_pool
         -int m_totalTasks
         -QMap~int,int~ m_taskIdToTotalTimeMs
         +on_startButton_clicked()
@@ -110,14 +125,17 @@ classDiagram
     class ThreadPool {
         -QMutex m_lock
         -QWaitCondition m_notEmpty
-        -QList~WorkerThread*~ m_threads
-        -TaskQueue* m_taskQ
-        -ManagerThread* m_managerThread
+        -std::vector<std::unique_ptr<WorkerThread>> m_threads
+        -std::unique_ptr<TaskQueue> m_taskQ
+        -std::unique_ptr<ManagerThread> m_managerThread
+        -std::unique_ptr<FileCommunication> m_comm
+        -std::unique_ptr<QTimer> m_reportTimer
         -int m_minNum, m_maxNum
         -int m_busyNum, m_aliveNum, m_exitNum
-        -QList~TaskVisualInfo~ m_finishedTasks
+        -QList<TaskVisualInfo> m_finishedTasks
         -int m_poolStartTimestamp
         -bool m_shutdown
+        -int m_nextThreadId
         +addTask(Task)
         +getWaitingTaskNumber() int
         +getRunningTaskNumber() int
@@ -136,11 +154,11 @@ classDiagram
 
     class TaskQueue {
         -QMutex m_mutex
-        -QList~Task~ m_queue
+        -QList<Task> m_queue
         -TaskScheduler* m_scheduler
         +addTask(Task)
         +takeTask() Task
-        +getTasks() QList~Task~
+        +getTasks() QList<Task>
         +setScheduler(TaskScheduler*)
         +taskNumber() int
         +clearQueue()
@@ -148,56 +166,62 @@ classDiagram
 
     class TaskScheduler {
         <<abstract>>
-        +insertByPolicy(QList~Task~&, Task) virtual
-        +sortQueue(QList~Task~&) virtual
+        +insertByPolicy(QList<Task>&, Task) virtual
+        +sortQueue(QList<Task>&) virtual
         +needsDynamicSort() virtual bool
     }
 
     class FIFOScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
     }
 
     class LIFOScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
     }
 
     class SJFScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
     }
 
     class LJFScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
     }
 
     class PRIOScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
     }
 
     class HRRNScheduler {
-        +insertByPolicy(QList~Task~&, Task)
-        +sortQueue(QList~Task~&)
+        +insertByPolicy(QList<Task>&, Task)
+        +sortQueue(QList<Task>&)
         +needsDynamicSort() bool
     }
 
     class WorkerThread {
         -ThreadPool* m_pool
         -int m_id
-        -int m_state
+        -ThreadState m_state
         -int m_curTaskId
         -int m_curTimeMs
+        -size_t m_curMemSize
         +run()
         +id() int
-        +state() int
-        +setState(int)
+        +state() ThreadState
+        +setState(ThreadState)
         +curTaskId() int
         +setCurTaskId(int)
         +curTimeMs() int
         +setCurTimeMs(int)
+        +curMemSize() size_t
+        +setCurMemSize(size_t)
+        -startTask(Task)
+        -executeTask(Task)
+        -finishTask(Task)
     }
 
     class ManagerThread {
@@ -213,11 +237,13 @@ classDiagram
         +int priority
         +int arrivalTimestampMs
         +int finishTimestampMs
+        +size_t memSize
+        +void* memPtr
     }
 
     class TaskVisualInfo {
         +int taskId
-        +int state
+        +TaskState state
         +int curThreadId
         +int totalTimeMs
         +int priority
@@ -227,7 +253,7 @@ classDiagram
 
     class ThreadVisualInfo {
         +int threadId
-        +int state
+        +ThreadState state
         +int curTaskId
         +int curTimeMs
     }
@@ -235,16 +261,16 @@ classDiagram
     class PoolView {
         -QGraphicsScene* m_scene
         -SchedulePolicy m_currentPolicy
-        -QMap~int,int~ m_taskIdToTotalTimeMs
-        -QList~ThreadVisualInfo~ m_lastThreadInfos
-        -QList~TaskVisualInfo~ m_lastWaitingTasks
-        -QList~TaskVisualInfo~ m_lastFinishedTasks
+        -QMap<int, int> m_taskIdToTotalTimeMs
+        -QList<ThreadVisualInfo> m_lastThreadInfos
+        -QList<TaskVisualInfo> m_lastWaitingTasks
+        -QList<TaskVisualInfo> m_lastFinishedTasks
         +visualizeAll(...)
         +drawThreads(...)
         +drawWaitingTasks(...)
         +drawFinishedTasks(...)
         +setCurrentPolicy(SchedulePolicy)
-        +setTaskIdToTotalTimeMs(QMap~int,int~)
+        +setTaskIdToTotalTimeMs(QMap<int, int>)
         +clear()
         +resizeEvent(QResizeEvent*)
     }
@@ -313,13 +339,25 @@ graph TB
         THVI[ThreadVisualInfo]
     end
     
+    subgraph "现代C++特性"
+        SP[智能指针]
+        RAII[RAII模式]
+        VECTOR[std::vector]
+        ENUM[enum class]
+    end
+    
     UI --> TP
     TQ --> TS
     TP --> TASK
     TP --> TVI
     TP --> THVI
     WT --> TASK
+    TP --> SP
+    SP --> RAII
+    SP --> VECTOR
+    TP --> ENUM
 ```
+
 
 ### 3. 线程池生命周期图
 
@@ -327,20 +365,22 @@ graph TB
 stateDiagram-v2
     [*] --> 未启动
     未启动 --> 运行中 : 点击开始按钮
-    运行中 --> 运行中 : 添加任务
-    运行中 --> 运行中 : 任务执行
-    运行中 --> 运行中 : 线程扩容
-    运行中 --> 运行中 : 线程缩容
-    运行中 --> 已停止 : 点击停止按钮
-    已停止 --> [*] : 析构完成
     
     state 运行中 {
-        [*] --> 空闲
-        空闲 --> 忙碌 : 获取任务
-        忙碌 --> 空闲 : 任务完成
-        空闲 --> 退出 : 收到退出信号
-        忙碌 --> 退出 : 收到退出信号
+        [*] --> 空闲状态
+        空闲状态 --> 任务执行 : 获取任务
+        任务执行 --> 任务完成 : 执行完毕
+        任务完成 --> 空闲状态 : 重置状态
+        
+        空闲状态 --> 线程扩容 : 任务队列>线程数
+        线程扩容 --> 空闲状态 : 创建新线程
+        
+        空闲状态 --> 线程缩容 : 忙线程*2<总线程数
+        线程缩容 --> 空闲状态 : 销毁多余线程
     }
+    
+    运行中 --> 已停止 : 点击停止按钮
+    已停止 --> [*] : 析构完成
 ```
 
 ### 4. 任务调度流程图
@@ -350,28 +390,44 @@ flowchart TD
     用户操作 --> 选择调度算法
     选择调度算法 --> 创建调度器实例
     创建调度器实例 --> 设置到任务队列
-    
-    任务到达 --> 添加到队列
-    添加到队列 --> 调用insertByPolicy
+
+
+    设置到任务队列 --> 调用insertByPolicy
     调用insertByPolicy --> 调用sortQueue
-    调用sortQueue --> 按算法排序
+    调用sortQueue --> C[按算法排序]
     
-    线程取任务 --> 检查是否需要动态排序
-    检查是否需要动态排序 -->|HRRN| 重新计算响应比
-    检查是否需要动态排序 -->|其他算法| 直接取队头
-    重新计算响应比 --> 按响应比排序
-    按响应比排序 --> 取队头任务
-    直接取队头 --> 取队头任务
-    取队头任务 --> 线程执行
+    线程取任务 --> 检查队列是否为空
+    检查队列是否为空 -->|空| 等待条件变量
+    等待条件变量 --> 收到wakeOne信号
+    收到wakeOne信号 --> 检查队列是否为空
     
-    线程执行 --> 任务完成
-    任务完成 --> 更新性能指标
-    更新性能指标 --> UI刷新
+    检查队列是否为空 -->|非空|获取任务
+    获取任务 --> 执行任务
+    执行任务 --> 任务完成
+    任务完成 --> 更新统计信息
+    更新统计信息 --> UI刷新
     UI刷新 --> 可视化更新
+    
+    subgraph "调度算法"
+        M[FIFO: 按ID排序]
+        N[LIFO: 按ID倒序]
+        O[SJF: 按时间升序]
+        P[LJF: 按时间降序]
+        Q[PRIO: 按优先级降序]
+        R[HRRN: 动态响应比]
+    end
+    
+    C --> M
+    C --> N
+    C --> O
+    C --> P
+    C --> Q
+    C --> R
 ```
 
 
-## 5. HRRN算法详细流程图
+
+### 5. HRRN算法详细流程图
 
 ```mermaid
 flowchart TD
@@ -400,7 +456,7 @@ flowchart TD
     S --> T[更新性能统计]
 ```
 
-## 6. 性能指标计算详细图
+### 6. 性能指标计算详细图
 
 ```mermaid
 flowchart TD
@@ -434,7 +490,6 @@ flowchart TD
     Q --> U
     T --> U
 ```
-
 
 ### 7. UI数据流图
 
@@ -487,7 +542,7 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-    [*] --> 创建 : new WorkerThread()
+    [*] --> 创建
     创建 --> 启动 : thread->start()
     启动 --> 空闲 : 进入工作循环
     
@@ -495,17 +550,17 @@ stateDiagram-v2
     等待任务 --> 空闲 : 收到wakeOne信号
     等待任务 --> 退出 : 收到退出信号
     
-    空闲 --> 忙碌 : takeTask()成功
+    空闲 --> 忙碌 : takeTask成功
     忙碌 --> 执行中 : 开始执行任务
-    执行中 --> 执行中 : 更新进度(每100ms)
+    执行中 --> 执行中 : 更新进度
     执行中 --> 任务完成 : 执行完毕
     任务完成 --> 空闲 : 重置状态
     
     忙碌 --> 退出 : 收到退出信号
     空闲 --> 退出 : 收到退出信号
     
-    退出 --> 销毁 : thread->wait()
-    销毁 --> [*] : delete thread
+    退出 --> 销毁 : thread->wait
+    销毁 --> [*]
 ```
 
 ### 9. 调度算法比较图
@@ -533,38 +588,37 @@ graph LR
     动态算法 --> B
 ```
 
-### 10. 内存管理图
+### 10. 智能指针内存管理图
 
 ```mermaid
 graph TD
     subgraph "对象创建"
-        MW[MainWindow创建]
-        TP[ThreadPool创建]
-        TQ[TaskQueue创建]
-        WT[WorkerThread创建]
-        MT[ManagerThread创建]
+        MW[MainWindow]
+        TP[ThreadPool]
+        MW -->|std::unique_ptr| TP
     end
-    
-    subgraph "对象关系"
-        MW --> TP
-        TP --> TQ
-        TP --> WT
-        TP --> MT
+
+    subgraph "核心组件"
+        TP -->|std::vector unique_ptr| WT[WorkerThread数组]
+        TP -->|std::unique_ptr| TQ[TaskQueue]
+        TP -->|std::unique_ptr| MT[ManagerThread]
     end
-    
-    subgraph "对象销毁"
-        MW销毁 --> TP销毁
-        TP销毁 --> TQ销毁
-        TP销毁 --> WT销毁
-        TP销毁 --> MT销毁
+
+    subgraph "辅助组件"
+        TP -->|std::unique_ptr| FC[FileCommunication]
+        TP -->|std::unique_ptr| QT[QTimer]
     end
-    
-    subgraph "内存管理"
-        QMutex[QMutex自动管理]
-        QThread[QThread自动管理]
-        QTimer[QTimer自动管理]
+
+    subgraph "线程操作"
+        ROOT[线程操作]
+        ROOT --> S[start启动]
+        ROOT --> W[wait等待]
+        ROOT --> D[自动析构]
     end
+
+    TP --> ROOT
 ```
+
 
 ### 11. 信号槽连接图
 
@@ -633,6 +687,7 @@ graph TB
     B --> D
     C --> D
 ```
+
 
 ---
 
@@ -726,16 +781,16 @@ for (int i = 1; i < count; ++i) {
 ## 扩展建议
 
 ### 功能扩展
-- **更多调度算法**：时间片轮转(RR)、多级反馈队列(MLFQ)
-- **任务管理**：任务取消、暂停、恢复
-- **性能优化**：任务优先级动态调整、负载均衡
-- **监控增强**：任务执行时间分布、队列长度统计
+- 更多调度算法：时间片轮转（RR）、多级反馈队列（MLFQ）
+- 任务管理：取消、暂停、恢复
+- 负载优化：优先级动态调整、负载均衡
+- 监控增强：执行时间分布、队列长度/趋势图
 
 ### 技术优化
-- **内存管理**：智能指针替代原始指针
-- **异常处理**：完善的错误处理和恢复机制
-- **配置持久化**：保存和加载线程池配置
-- **日志系统**：结构化日志，支持日志级别
+- 异常处理：任务回退与错误恢复
+- 配置持久化：保存/加载线程池与调度设置
+- 日志系统：结构化日志与日志级别
+- 单元测试：调度与并发路径的覆盖
 
 ---
 

@@ -5,8 +5,10 @@
 #include <QMutex>
 #include <QThread>
 #include <QList>
+#include <vector>
 #include <QWaitCondition>
 #include <QTimer>
+#include <memory>
 #include "taskqueue.h"
 #include "visualinfo.h"
 #include "scheduler.h"
@@ -143,9 +145,13 @@ private:
 
     mutable QMutex m_lock;          // Qt互斥锁，替代pthread_mutex_t
     QWaitCondition m_notEmpty;      // Qt条件变量，替代pthread_cond_t
-    QList<WorkerThread*> m_threads; // Qt线程对象列表，替代pthread_t数组
-    TaskQueue* m_taskQ;
-    ManagerThread* m_managerThread; // 管理者线程
+
+    // 普通指针->智能指针
+   std::vector<std::unique_ptr<WorkerThread>> m_threads;
+   std::unique_ptr<TaskQueue> m_taskQ;
+   std::unique_ptr<ManagerThread> m_managerThread;
+   std::unique_ptr<FileCommunication> m_comm;
+   std::unique_ptr<QTimer> m_reportTimer;
 
     int m_minNum;
     int m_maxNum;
@@ -159,10 +165,7 @@ private:
     int m_poolStartTimestamp;   // 线程池开始时间,用于计算吞吐量中的总耗时
     int m_nextThreadId = 1;
 
-    // 通信相关
-    FileCommunication* m_comm = nullptr;
-    // 心跳机制：定时器
-    QTimer* m_reportTimer = nullptr;
+
 };
 
 #endif // THREADPOOL_H

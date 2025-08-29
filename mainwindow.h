@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QMap>
+#include <memory>
 #include "threadpool.h"
 #include "poolview.h"
 
@@ -52,7 +53,8 @@ private:
 
 private:
     Ui::MainWindow *ui;
-    ThreadPool *m_pool;
+    // ThreadPool *m_pool;
+    std::unique_ptr<ThreadPool> m_pool;
     // ui中，把poolGraphicsView提升为PoolView后,不再需要PoolView* m_poolView这个成员变量
 
     int m_totalTasks = 0;
